@@ -6765,8 +6765,6 @@ public Action Timer_BondingTick(Handle timer)
                 }
             }
         }
-
-        // ---- Update the “was near” flag and apply miss‑cooldown if they left without a laser ----
         if (bNearLaser)
         {
             g_bCharNearLaser[character] = true;
