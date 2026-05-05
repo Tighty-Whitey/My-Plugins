@@ -4286,7 +4286,6 @@ Action Cmd_TeleportAmmo(int client, int args)
     TeleportEntity(client, vPos, NULL_VECTOR, NULL_VECTOR);
     int spawnIdx = validSpawnIdx.Get(teleportAmmoIndex);
     
-    // ---- guarded file logging ----
     if (g_bAmmoDebug)
         LogToFileEx(g_sLogPath, "TeleportAmmo! Client %d to ammo (spawn idx %d)", client, spawnIdx);
     
