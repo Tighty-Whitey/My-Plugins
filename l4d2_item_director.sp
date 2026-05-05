@@ -3271,10 +3271,6 @@ Action Cmd_TeleportUpgradePack(int client, int args)
             vItem = g_vSpawnerPos[idx];
         else
             GetEntPropVector(ent, Prop_Data, "m_vecOrigin", vItem);
-
-        // Use ignore radius as detection radius (just to be consistent; we don't need a "radius" cvar).
-        // If you prefer, you can simply check any distance and not enforce radius.
-        // For this tel command we'll check within 2000 units (or you can use ignore radius).
         float dist = GetVectorDistance(vMyPos, vItem);
         if (dist <= 2000.0)   // arbitrary range for admin teleport
         {
@@ -6728,8 +6724,6 @@ public Action Timer_BondingTick(Handle timer)
 
         int character = GetEntProp(client, Prop_Send, "m_survivorCharacter");
         if (character < 0 || character > 3) continue;
-
-        // ---- Detect whether this survivor is currently within range of ANY laser box ----
         bool bNearLaser = false;
         float vSurv[3], vLaser[3];
         GetClientAbsOrigin(client, vSurv);
