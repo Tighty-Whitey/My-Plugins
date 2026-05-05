@@ -5188,7 +5188,7 @@ Action Timer_CheckProximity(Handle timer)
                     }
                     else
                     {
-                        g_bProposeInitialDone = true;   // initial batch completed
+                        g_bProposeInitialDone = true; 
                         if (g_bProposeDebug)
                         LogToFileEx(g_sLogPath, "ProposeDebug: Initial phase complete, switching to ongoing");
                     }
@@ -5459,7 +5459,6 @@ Action Timer_CheckProximity(Handle timer)
 
         if (bShouldSpawn && spawnForClient != 0)
         {
-            // 3. Find the best spawn point for `spawnForClient`
             float vClientOrigin[3];
             GetClientAbsOrigin(spawnForClient, vClientOrigin);
             int bestIdx = -1;
@@ -5866,7 +5865,7 @@ Action Timer_CheckProximity(Handle timer)
             LogToFileEx(g_sLogPath, "ThrowableDebug: Flow‑only mode, alive survivors = %d, uncovered forced", aliveCount);
         }
 
-        if (g_bThrowableDebug && g_bThrowableCoverage)   // coverage mode already logs above; avoid double logging
+        if (g_bThrowableDebug && g_bThrowableCoverage)
         LogToFileEx(g_sLogPath, "ThrowableDebug: Alive survivors = %d, uncovered = %d", aliveCount, uncovered);
 
         if (uncovered > 0)
@@ -6359,7 +6358,7 @@ if (g_bUpgradePackEnable)
                         g_aCleanupItems.Push(EntIndexToEntRef(item));
                         g_aCleanupTimers.Push(0.0);
                         g_aCleanupIndex.Push(bestIdx);
-                        g_aCleanupType.Push(8);   // 8 = upgrade pack
+                        g_aCleanupType.Push(8); 
                     }
                     if (g_bUpgradePackDebug)
                         LogToFileEx(g_sLogPath, "UpgradePackDebug: Pending spawn succeeded at index %d (dist %.0f)", bestIdx, bestDist);
@@ -6815,7 +6814,7 @@ public Action Timer_BondingTick(Handle timer)
             {
                 // Same weapon type – transfer the bonding value
                 g_fWeaponBondingChar[character][weapon] = g_fCarryoverBonding[character];
-                g_sWeaponEntityClass[weapon] = currentWeaponClass;   // store class
+                g_sWeaponEntityClass[weapon] = currentWeaponClass;
 
                 if (g_bBondingDebug)
                 LogToFileEx(g_sLogPath, "[Bonding] Carryover applied – same weapon %s for char %d (value %.2f)",
@@ -6901,7 +6900,7 @@ public Action Timer_BondingTick(Handle timer)
             client, character, weapon, wname, bonding, bitVec, (bitVec & 4) ? 1 : 0, bNearLaser);
         }
 
-        // Determine “ready” status
+        // Determine "ready" status
         bool bSkipDueToMissCooldown = (GetGameTime() < g_fBondingMissCooldownUntil[character]);
 
         if (bSkipDueToMissCooldown)
@@ -6950,7 +6949,7 @@ public Action Timer_BondingTick(Handle timer)
     // Bonding threshold
     if (alive > 0 && float(ready) / alive >= g_fBondingFraction)
     {
-        // Laser‑proximity check (uses per‑client near flags)
+        // Laser‑proximity check
         bool bAnyLaserNear = false;
         for (int i = 0; i < 4; i++)
         {
