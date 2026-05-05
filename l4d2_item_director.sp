@@ -937,7 +937,7 @@ void Event_WeaponDrop(Event event, const char[] name, bool dontBroadcast)
     // If decay is enabled, record the drop time for the weapon entity
     if (g_bBondingDecayEnable)
     {
-        // Find the dropped weapon (same method as your existing transfer logic)
+        // Find the dropped weapon
         char sWeaponClass[64];
         event.GetString("weapon", sWeaponClass, sizeof(sWeaponClass));
 
