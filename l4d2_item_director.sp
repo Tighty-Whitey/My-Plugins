@@ -1290,7 +1290,7 @@ void ResetAllState()
         for (int i = 0; i < 2048; i++)
         {
             g_fWeaponBondingChar[c][i] = 0.0;
-            g_fWeaponLastDropTime[c][i] = 0.0;    // decay tracking
+            g_fWeaponLastDropTime[c][i] = 0.0;
         }
     }
 
