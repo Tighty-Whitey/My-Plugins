@@ -3901,7 +3901,7 @@ void RemoveItemsAtPosition(float vCenter[3], int excludeEnt = -1)
     }
 }
 
-// Teleport commands (unchanged)
+// Teleport commands
 Action Cmd_Teleport(int client, int args)
 {
     if (!g_bEnabled)
