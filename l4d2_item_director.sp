@@ -5,10 +5,12 @@
 #include <sdktools>
 #include <left4dhooks>
 
-#define PLUGIN_VERSION "1.0"
+#define PLUGIN_VERSION "1.1"
 #define LOG_FILE "logs/item_director_debug.log"
 
 ConVar g_cvEnable;
+ConVar g_cvAllowedModes;
+ConVar g_hMPGameMode;
 ConVar g_cvReplaceRadius;
 ConVar g_cvWeaponEnable;
 ConVar g_cvWeaponRadius;
@@ -113,6 +115,7 @@ ConVar g_cvUpgradePackHud;
 ConVar g_cvBondingDebug;
 ConVar g_cvBondingHud;
 
+bool g_bModeAllowed = true;
 bool g_bDefibNearCabinet = false;
 bool g_bEnabled = true;
 float g_fReplaceRadius = 1.0;
@@ -377,7 +380,7 @@ public Plugin myinfo = {
     name = "Item Director",
     author = "Tighty-Whitey",
     description = "Adaptive item director",
-    version = "1.0",
+    version = "1.1",
     url = ""
 };
 
@@ -386,6 +389,7 @@ public void OnPluginStart()
     BuildPath(Path_SM, g_sLogPath, sizeof(g_sLogPath), LOG_FILE);
 
     g_cvEnable                 = CreateConVar("item_director_enable", "1", "Master enable (0=Off, 1=On)", FCVAR_NOTIFY);
+    g_cvAllowedModes = CreateConVar("item_director_modes", "", "Comma‑separated allowed game modes (no spaces). Empty = all.", FCVAR_NOTIFY);
     g_cvReplaceRadius          = CreateConVar("item_director_replace_radius", "1.0", "Radius around spawn to remove the original item spawner", FCVAR_NOTIFY);
     g_cvWeaponEnable           = CreateConVar("item_director_weapon_enable", "1", "Enable proximity weapon spawn (0=Off, 1=On)", FCVAR_NOTIFY);
     g_cvWeaponRadius           = CreateConVar("item_director_weapon_radius", "1000.0", "Outer radius around original item spawn to spawn a weapon", FCVAR_NOTIFY);
@@ -505,6 +509,7 @@ public void OnPluginStart()
     }
 
     g_cvEnable.AddChangeHook(OnCvarChanged);
+    g_cvAllowedModes.AddChangeHook(OnCvarChanged);
     g_cvReplaceRadius.AddChangeHook(OnCvarChanged);
     g_cvWeaponEnable.AddChangeHook(OnCvarChanged);
     g_cvWeaponRadius.AddChangeHook(OnCvarChanged);
@@ -767,6 +772,8 @@ void ApplyCvars()
     g_bBondingHud = g_cvBondingHud.BoolValue;
     g_fFinaleIgnoreRadius = g_cvFinaleIgnoreRadius.FloatValue;
 
+    UpdateAllowedGameMode();
+
     if (g_hCvar_PillsDecay != null)
     g_fCvar_PillsDecay = g_hCvar_PillsDecay.FloatValue;
 
@@ -821,21 +828,64 @@ void ApplyCvars()
     g_fBondingDecayPerSecond = 0.1 / g_fBondingDecayInterval;
 }
 
+void UpdateAllowedGameMode()
+{
+    g_bModeAllowed = true;
+    if (g_cvAllowedModes == null) return;
+
+    char list[256];
+    g_cvAllowedModes.GetString(list, sizeof(list));
+    TrimString(list);
+    if (!list[0]) return;
+
+    if (g_hMPGameMode == null)
+    g_hMPGameMode = FindConVar("mp_gamemode");
+
+    if (g_hMPGameMode == null)
+    {
+        g_bModeAllowed = false;
+        return;
+    }
+
+    char currentMode[64];
+    g_hMPGameMode.GetString(currentMode, sizeof(currentMode));
+    TrimString(currentMode);
+
+    char hay[320], needle[96];
+    Format(hay, sizeof(hay), ",%s,", list);
+    Format(needle, sizeof(needle), ",%s,", currentMode);
+
+    g_bModeAllowed = (StrContains(hay, needle, false) != -1);
+}
+
 void ManageTimers()
 {
     if (g_hProximityTimer != null) { KillTimer(g_hProximityTimer); g_hProximityTimer = null; }
+    if (g_hCleanupTimer != null) { KillTimer(g_hCleanupTimer); g_hCleanupTimer = null; }
+    if (g_hConditionTimer != null) { KillTimer(g_hConditionTimer); g_hConditionTimer = null; }
+    if (g_hConditionHudTimer != null) { KillTimer(g_hConditionHudTimer); g_hConditionHudTimer = null; }
+    if (g_hDefibHudTimer != null) { KillTimer(g_hDefibHudTimer); g_hDefibHudTimer = null; }
+    if (g_hHealthTimer != null) { KillTimer(g_hHealthTimer); g_hHealthTimer = null; }
+    if (g_hWeaponHudTimer != null) { KillTimer(g_hWeaponHudTimer); g_hWeaponHudTimer = null; }
+    if (g_hProposeHudTimer != null) { KillTimer(g_hProposeHudTimer); g_hProposeHudTimer = null; }
+    if (g_hAmmoHudTimer != null) { KillTimer(g_hAmmoHudTimer); g_hAmmoHudTimer = null; }
+    if (g_hTempHealthSpawnHudTimer != null) { KillTimer(g_hTempHealthSpawnHudTimer); g_hTempHealthSpawnHudTimer = null; }
+    if (g_hThrowableHudTimer != null) { KillTimer(g_hThrowableHudTimer); g_hThrowableHudTimer = null; }
+    if (g_hLaserSightHudTimer != null) { KillTimer(g_hLaserSightHudTimer); g_hLaserSightHudTimer = null; }
+    if (g_hUpgradePackHudTimer != null) { KillTimer(g_hUpgradePackHudTimer); g_hUpgradePackHudTimer = null; }
+    if (g_hBondingTimer != null) { KillTimer(g_hBondingTimer); g_hBondingTimer = null; }
+    if (g_hBondingHudTimer != null) { KillTimer(g_hBondingHudTimer); g_hBondingHudTimer = null; }
+
+    if (!g_bEnabled || !g_bModeAllowed) return;
+
     if (g_bEnabled && (g_bWeaponEnable || (g_bConditionEnable && g_bMedkitEnable && g_fBypassCooldown > 0.0)))
     g_hProximityTimer = CreateTimer(0.5, Timer_CheckProximity, _, TIMER_REPEAT);
 
-    if (g_hCleanupTimer != null) { KillTimer(g_hCleanupTimer); g_hCleanupTimer = null; }
     if (g_bEnabled && g_bCleanupEnable) {
     g_hCleanupTimer = CreateTimer(5.0, Timer_CheckCleanup, _, TIMER_REPEAT);
     g_fLastCleanupCheck = GetGameTime();
     }
 
-    if (g_hConditionTimer != null) { KillTimer(g_hConditionTimer); g_hConditionTimer = null; }
-    if (g_hConditionHudTimer != null) { KillTimer(g_hConditionHudTimer); g_hConditionHudTimer = null; }
-    if (g_hDefibHudTimer != null) { KillTimer(g_hDefibHudTimer); g_hDefibHudTimer = null; }
     if (g_bEnabled && (g_bConditionEnable || g_bDefibEnable)) {
     g_hConditionTimer = CreateTimer(1.0, Timer_CheckCondition, _, TIMER_REPEAT);
     if (g_bConditionHud)
@@ -844,7 +894,6 @@ void ManageTimers()
     g_hDefibHudTimer = CreateTimer(1.0, Timer_UpdateDefibHud, _, TIMER_REPEAT);
     }
 
-    if (g_hHealthTimer != null) { KillTimer(g_hHealthTimer); g_hHealthTimer = null; }
     if (g_bEnabled && g_bHealthDebug)
     g_hHealthTimer = CreateTimer(2.0, Timer_DumpHealth, _, TIMER_REPEAT);
 
@@ -895,7 +944,6 @@ void ManageTimers()
     if (g_bEnabled && g_bBondingEnable && g_bBondingHud)
     g_hBondingHudTimer = CreateTimer(1.0, Timer_UpdateBondingHud, _, TIMER_REPEAT);
 }
-
 void LogDebug(const char[] format, any ...)
 {
     if (!g_bDebug && !g_bConditionDebug && !g_bHealthDebug && !g_bDefibDebug && !g_bWeaponDebug) return;
@@ -1490,14 +1538,20 @@ void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
         }
     }
     for (int i = 0; i < 2048; i++)
-    g_sWeaponEntityClass[i][0] = '\0';
+        g_sWeaponEntityClass[i][0] = '\0';
 
     for (int i = 1; i <= MaxClients; i++)
-    g_bPlayerBondingReady[i] = false;
+        g_bPlayerBondingReady[i] = false;
     g_bBondingLaserPending = false;
 
     ClearCleanupTracking();
+    
     g_bLeftSafeArea = false;
+    if (L4D_HasAnySurvivorLeftSafeArea())
+    {
+        g_bLeftSafeArea = true;
+    }
+    
     g_iCondition = 0;
     g_iLastCondition = -1;
     g_fNextSpawnFlow = -1.0;
@@ -1516,9 +1570,9 @@ void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
 
     g_iSpawnerCount = 0;
     if (g_iSpawnPointMode == 2)
-    CacheAllSpawners();
+        CacheAllSpawners();
     else
-    CachePillSpawners();
+        CachePillSpawners();
 
     PrecomputeCabinetProximity();
     RequestFrame(OnFramePrecomputeSaferoom);
@@ -1542,7 +1596,7 @@ void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
     g_bUpgradePackPending = false;                
 
     for (int i = 1; i <= MaxClients; i++)
-    g_bHasItemTempHealth[i] = false;
+        g_bHasItemTempHealth[i] = false;
 
     // Weapon Bonding round‑start reset
     if (g_bBondingEnable)
@@ -2652,8 +2706,7 @@ bool SpawnDefibAtClosestValid()
 
     for (int i = 0; i < g_iSpawnerCount; i++)
     {
-        if (g_bDefibSpawned[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i])
-        continue;
+        if (g_bUsedIndex[i] || g_bDefibSpawned[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
         if (g_bNearCabinet[i] && !g_bDefibNearCabinet)
         continue;
         if (g_bNearSaferoom[i] && g_fSaferoomIgnoreRadius > 0.0)
@@ -5008,8 +5061,7 @@ Action Timer_CheckProximity(Handle timer)
             float bestDist = 999999.0;
             for (int i = 0; i < g_iSpawnerCount; i++)
             {
-                if (g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i])
-                continue;
+                if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
                 if (g_bNearCabinet[i] && !g_bWeaponNearCabinet)
                 continue;
                 if (g_bNearSaferoom[i] && g_fSaferoomIgnoreRadius > 0.0)
@@ -5102,7 +5154,7 @@ Action Timer_CheckProximity(Handle timer)
                 float bestDist = 999999.0;
                 for (int i = 0; i < g_iSpawnerCount; i++)
                 {
-                    if (g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
+                    if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
                     if (g_bNearCabinet[i] && !g_bWeaponNearCabinet) continue;
                     if (g_bNearSaferoom[i] && g_fSaferoomIgnoreRadius > 0.0) continue;
                     if (g_bNearFinale[i] && g_fFinaleIgnoreRadius > 0.0) continue;
@@ -5225,7 +5277,7 @@ Action Timer_CheckProximity(Handle timer)
                         float bestDist = 999999.0;
                         for (int i = 0; i < g_iSpawnerCount; i++)
                         {
-                            if (g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
+                            if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
                             if (g_bNearCabinet[i] && !g_bWeaponNearCabinet) continue;
                             if (g_bNearSaferoom[i] && g_fSaferoomIgnoreRadius > 0.0) continue;
                             if (g_bNearFinale[i] && g_fFinaleIgnoreRadius > 0.0) continue;
@@ -5465,7 +5517,7 @@ Action Timer_CheckProximity(Handle timer)
             float bestDist = 999999.0;
             for (int i = 0; i < g_iSpawnerCount; i++)
             {
-                if (g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i]) continue;
+                if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i]) continue;
                 if (g_bNearCabinet[i] && !g_bWeaponNearCabinet) continue;
                 if (g_bNearSaferoom[i] && g_fSaferoomIgnoreRadius > 0.0) continue;
                 if (g_bNearFinale[i] && g_fFinaleIgnoreRadius > 0.0) continue;
@@ -5673,7 +5725,7 @@ Action Timer_CheckProximity(Handle timer)
                         float bestDist = 999999.0;
                         for (int i = 0; i < g_iSpawnerCount; i++)
                         {
-                            if (g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
+                            if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
                             if (g_bNearCabinet[i] && !g_bWeaponNearCabinet) continue;
                             if (g_bNearSaferoom[i] && g_fSaferoomIgnoreRadius > 0.0) continue;
                             if (g_bNearFinale[i] && g_fFinaleIgnoreRadius > 0.0) continue;
@@ -5894,7 +5946,7 @@ Action Timer_CheckProximity(Handle timer)
                         float bestDist = 999999.0;
                         for (int i = 0; i < g_iSpawnerCount; i++)
                         {
-                            if (g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
+                            if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
                             if (g_bNearCabinet[i] && !g_bWeaponNearCabinet) continue;
                             if (g_bNearSaferoom[i] && g_fSaferoomIgnoreRadius > 0.0) continue;
                             if (g_bNearFinale[i] && g_fFinaleIgnoreRadius > 0.0) continue;
@@ -6040,7 +6092,7 @@ if (g_bLaserSightEnable && g_fLaserSightRadius > 0.0)
                 float bestDist = 999999.0;
                 for (int i = 0; i < g_iSpawnerCount; i++)
                 {
-                    if (g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
+                    if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
                     if (g_bNearCabinet[i] && !g_bWeaponNearCabinet) continue;
                     if (g_bNearSaferoom[i] && g_fSaferoomIgnoreRadius > 0.0) continue;
                     if (g_bNearFinale[i] && g_fFinaleIgnoreRadius > 0.0) continue;
@@ -6120,7 +6172,7 @@ if (g_bLaserSightEnable && g_fLaserSightRadius > 0.0)
                     float bestDist = 999999.0;
                     for (int i = 0; i < g_iSpawnerCount; i++)
                     {
-                        if (g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
+                        if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i] || g_bUpgradePackSpawned[i]) continue;
                         if (g_bNearCabinet[i] && !g_bWeaponNearCabinet) continue;
                         if (g_bNearSaferoom[i] && g_fSaferoomIgnoreRadius > 0.0) continue;
                         if (g_bNearFinale[i] && g_fFinaleIgnoreRadius > 0.0) continue;
@@ -6217,7 +6269,7 @@ if (g_bLaserSightEnable && g_fLaserSightRadius > 0.0)
                                 float bestDist = 999999.0;
                                 for (int i = 0; i < g_iSpawnerCount; i++)
                                 {
-                                    if (g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
+                                    if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
                                     if (g_bNearCabinet[i] && !g_bWeaponNearCabinet) continue;
                                     if (g_bNearSaferoom[i] && g_fSaferoomIgnoreRadius > 0.0) continue;
                                     if (g_bNearFinale[i] && g_fFinaleIgnoreRadius > 0.0) continue;
@@ -6314,7 +6366,7 @@ if (g_bUpgradePackEnable)
             float bestDist = 999999.0;
             for (int i = 0; i < g_iSpawnerCount; i++)
             {
-                if (g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i] || g_bUpgradePackSpawned[i]) continue;
+                if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i] || g_bUpgradePackSpawned[i]) continue;
                 if (g_bNearCabinet[i] && !g_bWeaponNearCabinet) continue;   // you can add a separate upgrade cabinet cvar if needed; reuse weaponNearCabinet for now
                 if (g_bNearSaferoom[i] && g_fSaferoomIgnoreRadius > 0.0) continue;
                 if (g_bNearFinale[i] && g_fFinaleIgnoreRadius > 0.0) continue;
@@ -6404,7 +6456,7 @@ if (g_bUpgradePackEnable)
                         float bestDist = 999999.0;
                         for (int i = 0; i < g_iSpawnerCount; i++)
                         {
-                            if (g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i] || g_bUpgradePackSpawned[i]) continue;
+                            if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i] || g_bUpgradePackSpawned[i]) continue;
                             if (g_bNearCabinet[i] && !g_bWeaponNearCabinet) continue;
                             if (g_bNearSaferoom[i] && g_fSaferoomIgnoreRadius > 0.0) continue;
                             if (g_bNearFinale[i] && g_fFinaleIgnoreRadius > 0.0) continue;
@@ -6597,8 +6649,7 @@ bool SpawnMedkitAtClosestValid()
 
     for (int i = 0; i < g_iSpawnerCount; i++)
     {
-        if (g_bMedkitSpawned[i] || g_bWeaponSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i])
-        continue;
+        if (g_bUsedIndex[i] || g_bMedkitSpawned[i] || g_bWeaponSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
         if (g_bNearCabinet[i] && !g_bMedkitNearCabinet)
         continue;
         if (g_bNearSaferoom[i] && g_fSaferoomIgnoreRadius > 0.0)

@@ -13,11 +13,10 @@ public Plugin myinfo =
     name = "[L4D2] Horde Tint",
     author = "Tighty-Whitey",
     description = "Triggers a cinematic tint during a mega horde.",
-    version = "1.1",
+    version = "1.2",
     url = ""
 };
 
-// Cvars
 ConVar gCvarEnable;
 ConVar gCvarModes;
 ConVar gCvarDuration;
@@ -51,8 +50,6 @@ ConVar gCvarCampaign_LastStand;
 ConVar gCvarCustomColor[MAX_CUSTOM_PRESETS + 1];
 ConVar gCvarCustomMaps [MAX_CUSTOM_PRESETS + 1];
 
-ConVar gCvarFallback; 
-
 ConVar gCvarDarkScale;
 ConVar gCvarPreHandoffMs;
 ConVar gCvarFinalAlphaMatch;
@@ -62,7 +59,6 @@ ConVar gCvarIntensity;
 
 ConVar gCvarFinaleEnable;
 
-// Constants
 #define FFADE_IN        0x0001
 #define FFADE_OUT       0x0002
 #define FFADE_MODULATE  0x0004
@@ -71,7 +67,6 @@ ConVar gCvarFinaleEnable;
 
 #define TEAM_SURVIVOR   2
 
-// State
 bool g_bModeAllowed = true;
 
 bool g_bActive = false;
@@ -89,13 +84,16 @@ int g_iGlobalL4D1[3] = {60, 170, 72};
 int g_iGlobalL4D2[3] = {204, 160, 54};
 int g_iCustomColorPresets[MAX_CUSTOM_PRESETS + 1][3];
 
-int g_iFallback[3] = {40, 40, 40}; 
-
 int g_iCurrentAlpha = 0;
+
+bool g_bIsL4D1[MAXPLAYERS+1];
+bool g_bSurvivorDetected[MAXPLAYERS+1];
+bool g_bUsingCustomPalette;
 
 Handle g_hEndTimer = null;
 Handle g_hForceTimer = null;
 Handle g_hPreTimer = null;
+Handle g_hDetectTimer = null;
 
 float g_fTintStartTime = 0.0;
 float g_fPlannedEndTime = 0.0;
@@ -105,7 +103,6 @@ int g_iFadeG = 0;
 int g_iFadeB = 0;
 int g_iFadeA = 0;
 
-// Plugin init
 public void OnPluginStart()
 {
     gCvarEnable = CreateConVar("sm_hordetint_enable", "1", "Enable/disable tint on hordes", FCVAR_NOTIFY, true, 0.0, true, 1.0);
@@ -118,26 +115,23 @@ public void OnPluginStart()
     gCvarTestSeconds = CreateConVar("sm_hordetint_test_seconds", "6.0", "Test tint duration in seconds", FCVAR_NOTIFY, true, 1.0);
     gCvarForceClear = CreateConVar("sm_hordetint_forceclear", "0", "After fade-out, send a final zero overlay (0/1)", FCVAR_NOTIFY, true, 0.0, true, 1.0);
 
-    gCvarColorL4D1 = CreateConVar("sm_hordetint_color_l4d1", "60 170 72", "L4D1 port palette RGB (R G B)", FCVAR_NOTIFY);
+    gCvarColorL4D1 = CreateConVar("sm_hordetint_color_l4d1", "0 220 120", "L4D1 palette RGB (R G B)", FCVAR_NOTIFY);
     gCvarColorL4D2 = CreateConVar("sm_hordetint_color_l4d2", "255 150 0", "L4D2 palette RGB (R G B)", FCVAR_NOTIFY);
 
-    gCvarCampaign_DeadCenter   = CreateConVar("sm_hordetint_color_deadcenter",    "", "Dead Center tint colour (R G B). Empty = L4D2 orange.", FCVAR_NOTIFY);
+    gCvarCampaign_DeadCenter   = CreateConVar("sm_hordetint_color_deadcenter",    "", "Dead Center tint colour (R G B). Empty = auto.", FCVAR_NOTIFY);
     gCvarCampaign_DarkCarnival  = CreateConVar("sm_hordetint_color_darkcarnival",  "128 0 128", "Dark Carnival tint colour (R G B).", FCVAR_NOTIFY);
-    gCvarCampaign_SwampFever   = CreateConVar("sm_hordetint_color_swampfever",   "", "Swamp Fever tint colour (R G B). Empty = L4D2 orange.", FCVAR_NOTIFY);
-    gCvarCampaign_HardRain     = CreateConVar("sm_hordetint_color_hardrain",      "", "Hard Rain tint colour (R G B). Empty = L4D2 orange.", FCVAR_NOTIFY);
-    gCvarCampaign_TheParish    = CreateConVar("sm_hordetint_color_theparish",     "", "The Parish tint colour (R G B). Empty = L4D2 orange.", FCVAR_NOTIFY);
+    gCvarCampaign_SwampFever   = CreateConVar("sm_hordetint_color_swampfever",   "", "Swamp Fever tint colour (R G B). Empty = auto.", FCVAR_NOTIFY);
+    gCvarCampaign_HardRain     = CreateConVar("sm_hordetint_color_hardrain",      "", "Hard Rain tint colour (R G B). Empty = auto.", FCVAR_NOTIFY);
+    gCvarCampaign_TheParish    = CreateConVar("sm_hordetint_color_theparish",     "", "The Parish tint colour (R G B). Empty = auto.", FCVAR_NOTIFY);
     gCvarCampaign_ThePassing   = CreateConVar("sm_hordetint_color_thepassing",    "210 40 150", "The Passing tint colour (R G B).", FCVAR_NOTIFY);
-    gCvarCampaign_ColdStream   = CreateConVar("sm_hordetint_color_coldstream",    "", "Cold Stream tint colour (R G B). Empty = L4D2 orange.", FCVAR_NOTIFY);
-    gCvarCampaign_CrashCourse  = CreateConVar("sm_hordetint_color_crashcourse",   "", "Crash Course tint colour (R G B). Empty = L4D1 green.", FCVAR_NOTIFY);
-    gCvarCampaign_DeathToll    = CreateConVar("sm_hordetint_color_deathtoll",     "", "Death Toll tint colour (R G B). Empty = L4D1 green.", FCVAR_NOTIFY);
-    gCvarCampaign_DeadAir      = CreateConVar("sm_hordetint_color_deadair",       "", "Dead Air tint colour (R G B). Empty = L4D1 green.", FCVAR_NOTIFY);
-    gCvarCampaign_BloodHarvest = CreateConVar("sm_hordetint_color_bloodharvest",  "", "Blood Harvest tint colour (R G B). Empty = L4D1 green.", FCVAR_NOTIFY);
-    gCvarCampaign_TheSacrifice = CreateConVar("sm_hordetint_color_thesacrifice",  "", "The Sacrifice tint colour (R G B). Empty = L4D1 green.", FCVAR_NOTIFY);
-    gCvarCampaign_NoMercy      = CreateConVar("sm_hordetint_color_nomercy",       "", "No Mercy tint colour (R G B). Empty = L4D1 green.", FCVAR_NOTIFY);
-    gCvarCampaign_LastStand    = CreateConVar("sm_hordetint_color_laststand",     "", "Last Stand tint colour (R G B). Empty = L4D1 green.", FCVAR_NOTIFY);
-
-    // Fallback cvar for unrecognised campaigns
-    gCvarFallback = CreateConVar("sm_hordetint_color_fallback", "128 0 128", "Fallback tint for unrecognised campaigns (R G B)", FCVAR_NOTIFY);
+    gCvarCampaign_ColdStream   = CreateConVar("sm_hordetint_color_coldstream",    "", "Cold Stream tint colour (R G B). Empty = auto.", FCVAR_NOTIFY);
+    gCvarCampaign_CrashCourse  = CreateConVar("sm_hordetint_color_crashcourse",   "", "Crash Course tint colour (R G B). Empty = auto.", FCVAR_NOTIFY);
+    gCvarCampaign_DeathToll    = CreateConVar("sm_hordetint_color_deathtoll",     "", "Death Toll tint colour (R G B). Empty = auto.", FCVAR_NOTIFY);
+    gCvarCampaign_DeadAir      = CreateConVar("sm_hordetint_color_deadair",       "", "Dead Air tint colour (R G B). Empty = auto.", FCVAR_NOTIFY);
+    gCvarCampaign_BloodHarvest = CreateConVar("sm_hordetint_color_bloodharvest",  "", "Blood Harvest tint colour (R G B). Empty = auto.", FCVAR_NOTIFY);
+    gCvarCampaign_TheSacrifice = CreateConVar("sm_hordetint_color_thesacrifice",  "", "The Sacrifice tint colour (R G B). Empty = auto.", FCVAR_NOTIFY);
+    gCvarCampaign_NoMercy      = CreateConVar("sm_hordetint_color_nomercy",       "", "No Mercy tint colour (R G B). Empty = auto.", FCVAR_NOTIFY);
+    gCvarCampaign_LastStand    = CreateConVar("sm_hordetint_color_laststand",     "", "Last Stand tint colour (R G B). Empty = auto.", FCVAR_NOTIFY);
 
     char name[64];
     for (int i = 1; i <= MAX_CUSTOM_PRESETS; i++)
@@ -174,7 +168,6 @@ public void OnPluginStart()
 
     gCvarColorL4D1.AddChangeHook(Cvar_PaletteChanged);
     gCvarColorL4D2.AddChangeHook(Cvar_PaletteChanged);
-    gCvarFallback.AddChangeHook(Cvar_PaletteChanged);
 
     gCvarCampaign_DeadCenter.AddChangeHook(Cvar_PaletteChanged);
     gCvarCampaign_DarkCarnival.AddChangeHook(Cvar_PaletteChanged);
@@ -200,10 +193,6 @@ public void OnPluginStart()
     gCvarTest.AddChangeHook(Cvar_TestChanged);
 
     UpdateAllowedGameMode();
-    DetectFinaleMap();
-    DetectCampaignKind();
-    UpdateAllPalettes();
-    g_iCurrentAlpha = ClampInt(gCvarAlpha.IntValue, 0, 255);
 
     HookEvent("create_panic_event", Event_PanicStart, EventHookMode_PostNoCopy);
     HookEvent("panic_event_finished", Event_PanicEnd, EventHookMode_PostNoCopy);
@@ -214,7 +203,6 @@ public void OnPluginStart()
     HookEvent("player_hurt", Event_PlayerHurt, EventHookMode_PostNoCopy);
 }
 
-// Helpers
 static int ClampInt(int v, int lo, int hi)
 {
     if (v < lo) return lo;
@@ -269,7 +257,6 @@ void ParseRGBFromConVar(ConVar cvar, int out[3], int defR, int defG, int defB)
     ParseRGB(s, out, defR, defG, defB);
 }
 
-// Game mode filter
 void UpdateAllowedGameMode()
 {
     g_bModeAllowed = true;
@@ -302,7 +289,6 @@ public void Cvar_ModesChanged(ConVar c, const char[] ov, const char[] nv)
     UpdateAllowedGameMode();
 }
 
-// Map detection
 static bool IsKnownFinaleName(const char[] map)
 {
     static const char finals[][] =
@@ -347,86 +333,22 @@ void DetectCampaignKind()
     char map[64];
     GetCurrentMap(map, sizeof(map));
 
-    if (strncmp(map, "c1m", 3, false) == 0)
-    {
-        g_iCurrentCampaignIdx = 1;
-        g_bIsCustomCampaign = false;
-    }
-    else if (strncmp(map, "c2m", 3, false) == 0)
-    {
-        g_iCurrentCampaignIdx = 2;
-        g_bIsCustomCampaign = false;
-    }
-    else if (strncmp(map, "c3m", 3, false) == 0)
-    {
-        g_iCurrentCampaignIdx = 3;
-        g_bIsCustomCampaign = false;
-    }
-    else if (strncmp(map, "c4m", 3, false) == 0)
-    {
-        g_iCurrentCampaignIdx = 4;
-        g_bIsCustomCampaign = false;
-    }
-    else if (strncmp(map, "c5m", 3, false) == 0)
-    {
-        g_iCurrentCampaignIdx = 5;
-        g_bIsCustomCampaign = false;
-    }
-    else if (strncmp(map, "c6m", 3, false) == 0)
-    {
-        g_iCurrentCampaignIdx = 6;
-        g_bIsCustomCampaign = false;
-    }
-    else if (strncmp(map, "c7m", 3, false) == 0)
-    {
-        g_iCurrentCampaignIdx = 7;
-        g_bIsCustomCampaign = false;
-    }
-    else if (strncmp(map, "c8m", 3, false) == 0)
-    {
-        g_iCurrentCampaignIdx = 8;
-        g_bIsL4D1Port = true;
-        g_bIsCustomCampaign = false;
-    }
-    else if (strncmp(map, "c9m", 3, false) == 0)
-    {
-        g_iCurrentCampaignIdx = 9;
-        g_bIsL4D1Port = true;
-        g_bIsCustomCampaign = false;
-    }
-    else if (strncmp(map, "c10m", 4, false) == 0)
-    {
-        g_iCurrentCampaignIdx = 10;
-        g_bIsL4D1Port = true;
-        g_bIsCustomCampaign = false;
-    }
-    else if (strncmp(map, "c11m", 4, false) == 0)
-    {
-        g_iCurrentCampaignIdx = 11;
-        g_bIsL4D1Port = true;
-        g_bIsCustomCampaign = false;
-    }
-    else if (strncmp(map, "c12m", 4, false) == 0)
-    {
-        g_iCurrentCampaignIdx = 12;
-        g_bIsL4D1Port = true;
-        g_bIsCustomCampaign = false;
-    }
-    else if (strncmp(map, "c13m", 4, false) == 0)
-    {
-        g_iCurrentCampaignIdx = 13;
-        g_bIsL4D1Port = true;
-        g_bIsCustomCampaign = false;
-    }
-    else if (strncmp(map, "c14m", 4, false) == 0)
-    {
-        g_iCurrentCampaignIdx = 14;
-        g_bIsL4D1Port = true;
-        g_bIsCustomCampaign = false;
-    }
+    if (strncmp(map, "c1m", 3, false) == 0)      { g_iCurrentCampaignIdx = 1;  g_bIsCustomCampaign = false; }
+    else if (strncmp(map, "c2m", 3, false) == 0) { g_iCurrentCampaignIdx = 2;  g_bIsCustomCampaign = false; }
+    else if (strncmp(map, "c3m", 3, false) == 0) { g_iCurrentCampaignIdx = 3;  g_bIsCustomCampaign = false; }
+    else if (strncmp(map, "c4m", 3, false) == 0) { g_iCurrentCampaignIdx = 4;  g_bIsCustomCampaign = false; }
+    else if (strncmp(map, "c5m", 3, false) == 0) { g_iCurrentCampaignIdx = 5;  g_bIsCustomCampaign = false; }
+    else if (strncmp(map, "c6m", 3, false) == 0) { g_iCurrentCampaignIdx = 6;  g_bIsCustomCampaign = false; }
+    else if (strncmp(map, "c7m", 3, false) == 0) { g_iCurrentCampaignIdx = 7;  g_bIsCustomCampaign = false; }
+    else if (strncmp(map, "c8m", 3, false) == 0) { g_iCurrentCampaignIdx = 8;  g_bIsL4D1Port = true; g_bIsCustomCampaign = false; }
+    else if (strncmp(map, "c9m", 3, false) == 0) { g_iCurrentCampaignIdx = 9;  g_bIsL4D1Port = true; g_bIsCustomCampaign = false; }
+    else if (strncmp(map, "c10m", 4, false) == 0){ g_iCurrentCampaignIdx = 10; g_bIsL4D1Port = true; g_bIsCustomCampaign = false; }
+    else if (strncmp(map, "c11m", 4, false) == 0){ g_iCurrentCampaignIdx = 11; g_bIsL4D1Port = true; g_bIsCustomCampaign = false; }
+    else if (strncmp(map, "c12m", 4, false) == 0){ g_iCurrentCampaignIdx = 12; g_bIsL4D1Port = true; g_bIsCustomCampaign = false; }
+    else if (strncmp(map, "c13m", 4, false) == 0){ g_iCurrentCampaignIdx = 13; g_bIsL4D1Port = true; g_bIsCustomCampaign = false; }
+    else if (strncmp(map, "c14m", 4, false) == 0){ g_iCurrentCampaignIdx = 14; g_bIsL4D1Port = true; g_bIsCustomCampaign = false; }
 }
 
-// Palette selection
 bool IsMapInCustomList(int presetIndex)
 {
     char map[64];
@@ -450,6 +372,8 @@ bool IsMapInCustomList(int presetIndex)
 
 void SelectActivePalette()
 {
+    g_bUsingCustomPalette = false;
+
     for (int i = 1; i <= MAX_CUSTOM_PRESETS; i++)
     {
         if (IsMapInCustomList(i))
@@ -457,36 +381,41 @@ void SelectActivePalette()
             g_iColor[0] = g_iCustomColorPresets[i][0];
             g_iColor[1] = g_iCustomColorPresets[i][1];
             g_iColor[2] = g_iCustomColorPresets[i][2];
+            g_bUsingCustomPalette = true;
             return;
         }
     }
 
     switch (g_iCurrentCampaignIdx)
     {
-        case 1:  ParseRGBFromConVar(gCvarCampaign_DeadCenter,   g_iColor, 204, 160, 54);
-        case 2:  ParseRGBFromConVar(gCvarCampaign_DarkCarnival,  g_iColor, 204, 160, 54);
-        case 3:  ParseRGBFromConVar(gCvarCampaign_SwampFever,   g_iColor, 204, 160, 54);
-        case 4:  ParseRGBFromConVar(gCvarCampaign_HardRain,      g_iColor, 204, 160, 54);
-        case 5:  ParseRGBFromConVar(gCvarCampaign_TheParish,     g_iColor, 204, 160, 54);
-        case 6:  ParseRGBFromConVar(gCvarCampaign_ThePassing,    g_iColor, 204, 160, 54);
-        case 7:  ParseRGBFromConVar(gCvarCampaign_ColdStream,    g_iColor, 204, 160, 54);
-        case 8:  ParseRGBFromConVar(gCvarCampaign_CrashCourse,   g_iColor, 60, 170, 72);
-        case 9:  ParseRGBFromConVar(gCvarCampaign_DeathToll,     g_iColor, 60, 170, 72);
-        case 10: ParseRGBFromConVar(gCvarCampaign_DeadAir,       g_iColor, 60, 170, 72);
-        case 11: ParseRGBFromConVar(gCvarCampaign_BloodHarvest,  g_iColor, 60, 170, 72);
-        case 12: ParseRGBFromConVar(gCvarCampaign_TheSacrifice,  g_iColor, 60, 170, 72);
-        case 13: ParseRGBFromConVar(gCvarCampaign_NoMercy,       g_iColor, 60, 170, 72);
-        case 14: ParseRGBFromConVar(gCvarCampaign_LastStand,     g_iColor, 60, 170, 72);
-        default:
-        {
-            g_iColor[0] = g_iFallback[0];
-            g_iColor[1] = g_iFallback[1];
-            g_iColor[2] = g_iFallback[2];
-        }
+        case 1:  if (TryParseCampaignCvar(gCvarCampaign_DeadCenter))   return;
+        case 2:  if (TryParseCampaignCvar(gCvarCampaign_DarkCarnival))  return;
+        case 3:  if (TryParseCampaignCvar(gCvarCampaign_SwampFever))    return;
+        case 4:  if (TryParseCampaignCvar(gCvarCampaign_HardRain))      return;
+        case 5:  if (TryParseCampaignCvar(gCvarCampaign_TheParish))     return;
+        case 6:  if (TryParseCampaignCvar(gCvarCampaign_ThePassing))    return;
+        case 7:  if (TryParseCampaignCvar(gCvarCampaign_ColdStream))    return;
+        case 8:  if (TryParseCampaignCvar(gCvarCampaign_CrashCourse))   return;
+        case 9:  if (TryParseCampaignCvar(gCvarCampaign_DeathToll))     return;
+        case 10: if (TryParseCampaignCvar(gCvarCampaign_DeadAir))       return;
+        case 11: if (TryParseCampaignCvar(gCvarCampaign_BloodHarvest))  return;
+        case 12: if (TryParseCampaignCvar(gCvarCampaign_TheSacrifice))  return;
+        case 13: if (TryParseCampaignCvar(gCvarCampaign_NoMercy))       return;
+        case 14: if (TryParseCampaignCvar(gCvarCampaign_LastStand))     return;
     }
 }
 
-// Cvar hooks
+bool TryParseCampaignCvar(ConVar cvar)
+{
+    char s[64];
+    cvar.GetString(s, sizeof(s));
+    if (s[0] == '\0')
+        return false;
+    ParseRGB(s, g_iColor, 0, 0, 0);
+    g_bUsingCustomPalette = true;
+    return true;
+}
+
 void UpdateAllPalettes()
 {
     for (int i = 1; i <= MAX_CUSTOM_PRESETS; i++)
@@ -506,8 +435,7 @@ void UpdateAllPalettes()
     }
     ParseRGBFromConVar(gCvarColorL4D1, g_iGlobalL4D1, 60, 170, 72);
     ParseRGBFromConVar(gCvarColorL4D2, g_iGlobalL4D2, 204, 160, 54);
-    // Update fallback from its cvar
-    ParseRGBFromConVar(gCvarFallback, g_iFallback, 40, 40, 40);
+
     SelectActivePalette();
 }
 
@@ -532,17 +460,82 @@ public void Cvar_TestChanged(ConVar c, const char[] ov, const char[] nv)
     g_fPlannedEndTime = g_fTintStartTime + secs;
 }
 
+void GetClientColor(int client, int &r, int &g, int &b)
+{
+    if (g_bUsingCustomPalette)
+    {
+        r = g_iColor[0];
+        g = g_iColor[1];
+        b = g_iColor[2];
+    }
+    else if (g_bIsL4D1[client])
+    {
+        r = g_iGlobalL4D1[0];
+        g = g_iGlobalL4D1[1];
+        b = g_iGlobalL4D1[2];
+    }
+    else
+    {
+        r = g_iGlobalL4D2[0];
+        g = g_iGlobalL4D2[1];
+        b = g_iGlobalL4D2[2];
+    }
+}
+
 public void OnMapStart()
 {
     UpdateAllowedGameMode();
     DetectFinaleMap();
     DetectCampaignKind();
     UpdateAllPalettes();
+
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        g_bIsL4D1[i] = false;
+        g_bSurvivorDetected[i] = false;
+    }
+
+    delete g_hDetectTimer;
+    g_hDetectTimer = CreateTimer(1.0, Timer_DetectSurvivors, _, TIMER_REPEAT);
 }
 
 public void OnMapEnd()
 {
+    delete g_hDetectTimer;
     ClearAll();
+}
+
+public Action Timer_DetectSurvivors(Handle timer)
+{
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        if (g_bSurvivorDetected[i])
+            continue;
+
+        if (!IsClientInGame(i) || GetClientTeam(i) != TEAM_SURVIVOR)
+            continue;
+
+        char model[128];
+        GetClientModel(i, model, sizeof(model));
+
+        if (StrContains(model, "survivor_", false) == -1)
+            continue;
+
+        if (StrContains(model, "namvet", false) != -1 || StrContains(model, "teenangst", false) != -1 ||
+            StrContains(model, "biker", false) != -1 || StrContains(model, "manager", false) != -1)
+        {
+            g_bIsL4D1[i] = true;
+        }
+        else if (StrContains(model, "gambler", false) != -1 || StrContains(model, "producer", false) != -1 ||
+                 StrContains(model, "coach", false) != -1 || StrContains(model, "mechanic", false) != -1)
+        {
+            g_bIsL4D1[i] = false;
+        }
+
+        g_bSurvivorDetected[i] = true;
+    }
+
+    return Plugin_Continue;
 }
 
 public Action Timer_TestEnd(Handle timer)
@@ -572,10 +565,12 @@ public void Event_PlayerHurt(Event event, const char[] name, bool dontBroadcast)
     if (client <= 0 || !IsClientInGame(client) || GetClientTeam(client) != TEAM_SURVIVOR) return;
     int alpha = ScaleAlpha(g_iCurrentAlpha, intens);
     int flags = FFADE_OUT | FFADE_MODULATE | FFADE_STAYOUT | FFADE_PURGE;
-    SendFade(client, 0, 60, flags, g_iColor[0], g_iColor[1], g_iColor[2], alpha);
+
+    int r, g, b;
+    GetClientColor(client, r, g, b);
+    SendFade(client, 0, 60, flags, r, g, b, alpha);
 }
 
-// Tint control
 void StartTintDebounced()
 {
     if (!g_bModeAllowed) return;
@@ -605,7 +600,10 @@ void StartTintDebounced()
     for (int i = 1; i <= MaxClients; i++)
     {
         if (!IsClientInGame(i) || GetClientTeam(i) != TEAM_SURVIVOR) continue;
-        SendFade(i, durMs, 1, flags, g_iColor[0], g_iColor[1], g_iColor[2], alpha);
+
+        int r, g, b;
+        GetClientColor(i, r, g, b);
+        SendFade(i, durMs, 1, flags, r, g, b, alpha);
     }
 
     g_fTintStartTime = GetGameTime();
@@ -645,27 +643,26 @@ public Action Timer_PreHandoff(Handle timer)
     if (s < 0.10) s = 0.10;
     if (s > 0.95) s = 0.95;
 
-    int dr = ClampInt(RoundToNearest(float(g_iColor[0]) * s), 0, 255);
-    int dg = ClampInt(RoundToNearest(float(g_iColor[1]) * s), 0, 255);
-    int db = ClampInt(RoundToNearest(float(g_iColor[2]) * s), 0, 255);
-
     float am = gCvarFinalAlphaMatch.FloatValue;
     if (am < 0.50) am = 0.50;
     if (am > 1.00) am = 1.00;
-    int daBase = ClampInt(RoundToNearest(float(g_iCurrentAlpha) * am), 0, 255);
-    int da = ScaleAlpha(daBase, intens);
 
     int flags = FFADE_OUT | FFADE_MODULATE | FFADE_STAYOUT | FFADE_PURGE;
     for (int i = 1; i <= MaxClients; i++)
     {
         if (!IsClientInGame(i) || GetClientTeam(i) != TEAM_SURVIVOR) continue;
+
+        int r, g, b;
+        GetClientColor(i, r, g, b);
+        int dr = ClampInt(RoundToNearest(float(r) * s), 0, 255);
+        int dg = ClampInt(RoundToNearest(float(g) * s), 0, 255);
+        int db = ClampInt(RoundToNearest(float(b) * s), 0, 255);
+        int daBase = ClampInt(RoundToNearest(float(g_iCurrentAlpha) * am), 0, 255);
+        int da = ScaleAlpha(daBase, intens);
+
         SendFade(i, 0, 60, flags, dr, dg, db, da);
     }
 
-    g_iFadeR = dr;
-    g_iFadeG = dg;
-    g_iFadeB = db;
-    g_iFadeA = da;
     g_bPrePlaced = true;
     return Plugin_Stop;
 }
@@ -690,28 +687,31 @@ void StopTintSmooth()
         return;
     }
 
+    float s = gCvarDarkScale.FloatValue;
+    if (s < 0.10) s = 0.10;
+    if (s > 0.95) s = 0.95;
+
+    float am = gCvarFinalAlphaMatch.FloatValue;
+    if (am < 0.50) am = 0.50;
+    if (am > 1.00) am = 1.00;
+
     if (!g_bPrePlaced)
     {
-        float s = gCvarDarkScale.FloatValue;
-        if (s < 0.10) s = 0.10;
-        if (s > 0.95) s = 0.95;
+        int flagsO = FFADE_OUT | FFADE_MODULATE | FFADE_STAYOUT | FFADE_PURGE;
+        for (int i = 1; i <= MaxClients; i++)
+        {
+            if (!IsClientInGame(i) || GetClientTeam(i) != TEAM_SURVIVOR) continue;
 
-        g_iFadeR = ClampInt(RoundToNearest(float(g_iColor[0]) * s), 0, 255);
-        g_iFadeG = ClampInt(RoundToNearest(float(g_iColor[1]) * s), 0, 255);
-        g_iFadeB = ClampInt(RoundToNearest(float(g_iColor[2]) * s), 0, 255);
+            int r, g, b;
+            GetClientColor(i, r, g, b);
+            int dr = ClampInt(RoundToNearest(float(r) * s), 0, 255);
+            int dg = ClampInt(RoundToNearest(float(g) * s), 0, 255);
+            int db = ClampInt(RoundToNearest(float(b) * s), 0, 255);
+            int daBase = ClampInt(RoundToNearest(float(g_iCurrentAlpha) * am), 0, 255);
+            int da = ScaleAlpha(daBase, intens);
 
-        float am = gCvarFinalAlphaMatch.FloatValue;
-        if (am < 0.50) am = 0.50;
-        if (am > 1.00) am = 1.00;
-        int daBase = ClampInt(RoundToNearest(float(g_iCurrentAlpha) * am), 0, 255);
-        g_iFadeA = ScaleAlpha(daBase, intens);
-    }
-
-    int flagsO = FFADE_OUT | FFADE_MODULATE | FFADE_STAYOUT | FFADE_PURGE;
-    for (int i = 1; i <= MaxClients; i++)
-    {
-        if (!IsClientInGame(i) || GetClientTeam(i) != TEAM_SURVIVOR) continue;
-        SendFade(i, 0, 60, flagsO, g_iFadeR, g_iFadeG, g_iFadeB, g_iFadeA);
+            SendFade(i, 0, 60, flagsO, dr, dg, db, da);
+        }
     }
 
     int dur = RoundToCeil(gCvarFadeOut.FloatValue * 1000.0);
@@ -719,7 +719,16 @@ void StopTintSmooth()
     for (int i = 1; i <= MaxClients; i++)
     {
         if (!IsClientInGame(i) || GetClientTeam(i) != TEAM_SURVIVOR) continue;
-        SendFade(i, dur, 0, flagsIN, g_iFadeR, g_iFadeG, g_iFadeB, g_iFadeA);
+
+        int r, g, b;
+        GetClientColor(i, r, g, b);
+        int dr = ClampInt(RoundToNearest(float(r) * s), 0, 255);
+        int dg = ClampInt(RoundToNearest(float(g) * s), 0, 255);
+        int db = ClampInt(RoundToNearest(float(b) * s), 0, 255);
+        int daBase = ClampInt(RoundToNearest(float(g_iCurrentAlpha) * am), 0, 255);
+        int da = ScaleAlpha(daBase, intens);
+
+        SendFade(i, dur, 0, flagsIN, dr, dg, db, da);
     }
 
     if (gCvarForceClear.BoolValue)
@@ -763,7 +772,6 @@ void ClearAll()
     }
 }
 
-// Messaging
 void SendFade(int client, int durationMs, int holdMs, int flags, int r, int g, int b, int a)
 {
     Handle msg = StartMessageOne("Fade", client);
