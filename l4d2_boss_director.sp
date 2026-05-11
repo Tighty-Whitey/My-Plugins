@@ -1681,7 +1681,7 @@ static int SpawnTankAt(const float pos[3])
 {
     float ang[3] = {0.0, 0.0, 0.0};
     bool manageNoBosses = (gC_DirectorNoBosses != null && gC_DirectorNoBosses.BoolValue);
-bool savedNoBosses = false;
+    bool savedNoBosses = false;
     if (manageNoBosses && gC_NoBosses != null)
     {
         savedNoBosses = gC_NoBosses.BoolValue;

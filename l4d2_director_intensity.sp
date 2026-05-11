@@ -891,6 +891,12 @@ public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
     g_bLeftSafeArea = false;
     g_fSafeAreaLeaveTime = 0.0;
 
+    if (L4D_HasAnySurvivorLeftSafeArea())
+    {
+        g_bLeftSafeArea = true;
+        g_fSafeAreaLeaveTime = GetEngineTime();
+    }
+
     EvaluateHordeBlocking();
     EvaluateSpecialBlocking();
     EvaluateBossBlocking();
