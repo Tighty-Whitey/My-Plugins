@@ -34,6 +34,7 @@ ConVar gC_FatigueInitialWeight, gC_FatigueExtraWeight, gC_FatigueResetCampaign;
 
 // Decay safe area lockout (global, applies to all systems)
 ConVar gC_DecaySafeAreaLockout;
+ConVar gC_DebugRebreather;
 
 ConVar g_hMPGameMode;
 bool  g_bModeAllowed = true;
@@ -42,7 +43,7 @@ public Plugin myinfo = {
     name = "L4D2 Director Intensity 2.0",
     author = "Tighty-Whitey",
     description = "Adaptive director intensity and disaster fatigue.",
-    version = "1.0",
+    version = "1.1",
     url = ""
 };
 
@@ -180,6 +181,9 @@ public void OnPluginStart()
     // Global decay safe-area lockout
     gC_DecaySafeAreaLockout = CreateConVar("director_intensity_decay_safearea_lockout", "30.0", "Seconds after leaving safe area before ANY decay can start. 0 = off.", FCVAR_NOTIFY, true, 0.0);
 
+    // Rebreather debug logging (off by default)
+    gC_DebugRebreather = CreateConVar("director_intensity_debug_rebreather", "0", "Log rebreather debug events to file (0/1)", FCVAR_NONE);
+
     AutoExecConfig(true, "l4d2_director_intensity");
 
     BuildPath(Path_SM, g_sLogPath, sizeof(g_sLogPath), "logs/director_intensity_debug.log");
@@ -216,8 +220,14 @@ public void OnMapStart()
 {
     g_bMapStarted = true;
     g_bEventActive = true;
-    g_bLeftSafeArea = false;
-    g_fSafeAreaLeaveTime = 0.0;
+
+    if (gC_DebugRebreather.BoolValue) LogToFileEx(g_sLogPath, "[BOSSDBG] OnMapStart triggered");
+
+    if (!L4D_HasAnySurvivorLeftSafeArea())
+    {
+        g_bLeftSafeArea = false;
+        g_fSafeAreaLeaveTime = 0.0;
+    }
 
     g_fHordeLastBumpTime = 0.0;
     g_fSpecialLastBumpTime = 0.0;
@@ -251,10 +261,46 @@ public void OnMapStart()
 
     ApplyDisasterFatigueBump();
 
-    if (g_bHordeBlockCarryover) { g_fHordeFlowUnblockCurrent = g_fHordeRemainingFlow; StartHordeBlock(); g_bHordeBlockCarryover = false; g_fHordeRemainingFlow = 0.0; }
-    if (g_bSpecialBlockCarryover) { g_fSpecialFlowUnblockCurrent = g_fSpecialRemainingFlow; StartSpecialBlock(); g_bSpecialBlockCarryover = false; g_fSpecialRemainingFlow = 0.0; }
-    if (g_bBossBlockCarryover) { g_fBossFlowUnblockCurrent = g_fBossRemainingFlow; StartBossBlock(); g_bBossBlockCarryover = false; g_fBossRemainingFlow = 0.0; }
-    if (g_bFatigueBlockCarryover) { g_fFatigueFlowUnblockCurrent = g_fFatigueRemainingFlow; StartFatigueBlock(); g_bFatigueBlockCarryover = false; g_fFatigueRemainingFlow = 0.0; }
+    if (g_bHordeBlockCarryover)
+    {
+        if (g_fHordeRemainingFlow > 0.0 && g_fHordeIntensity >= gC_HordeThreshold.FloatValue)
+        {
+            g_fHordeFlowUnblockCurrent = g_fHordeRemainingFlow;
+            StartHordeBlock();
+        }
+        g_bHordeBlockCarryover = false;
+        g_fHordeRemainingFlow = 0.0;
+    }
+    if (g_bSpecialBlockCarryover)
+    {
+        if (g_fSpecialRemainingFlow > 0.0 && g_fSpecialIntensity >= gC_SpecialThreshold.FloatValue)
+        {
+            g_fSpecialFlowUnblockCurrent = g_fSpecialRemainingFlow;
+            StartSpecialBlock();
+        }
+        g_bSpecialBlockCarryover = false;
+        g_fSpecialRemainingFlow = 0.0;
+    }
+    if (g_bBossBlockCarryover)
+    {
+        if (g_fBossRemainingFlow > 0.0 && g_fBossIntensity >= gC_BossThreshold.FloatValue)
+        {
+            g_fBossFlowUnblockCurrent = g_fBossRemainingFlow;
+            StartBossBlock();
+        }
+        g_bBossBlockCarryover = false;
+        g_fBossRemainingFlow = 0.0;
+    }
+    if (g_bFatigueBlockCarryover)
+    {
+        if (g_fFatigueRemainingFlow > 0.0 && g_fFatigue >= gC_FatigueThreshold.FloatValue)
+        {
+            g_fFatigueFlowUnblockCurrent = g_fFatigueRemainingFlow;
+            StartFatigueBlock();
+        }
+        g_bFatigueBlockCarryover = false;
+        g_fFatigueRemainingFlow = 0.0;
+    }
 }
 
 public void OnMapEnd()
@@ -300,9 +346,11 @@ bool IsAnyBlockActive()
 
 void KillAllTimers()
 {
-    if (g_hHordeRebreather != null) { KillTimer(g_hHordeRebreather); g_hHordeRebreather = null; }
+    if (gC_DebugRebreather.BoolValue) LogToFileEx(g_sLogPath, "[BOSSDBG] KillAllTimers called");
+
+    if (g_hHordeRebreather != null)   { KillTimer(g_hHordeRebreather);   g_hHordeRebreather   = null; }
     if (g_hSpecialRebreather != null) { KillTimer(g_hSpecialRebreather); g_hSpecialRebreather = null; }
-    if (g_hBossRebreather != null) { KillTimer(g_hBossRebreather); g_hBossRebreather = null; }
+    if (g_hBossRebreather != null)    { KillTimer(g_hBossRebreather);    g_hBossRebreather    = null; }
     if (g_hFatigueRebreather != null) { KillTimer(g_hFatigueRebreather); g_hFatigueRebreather = null; }
 }
 
@@ -330,7 +378,21 @@ bool CanDecay()
 {
     float lock = gC_DecaySafeAreaLockout.FloatValue;
     if (lock <= 0.0) return true;
-    if (!g_bLeftSafeArea) return false;
+
+    if (!g_bLeftSafeArea)
+    {
+        if (L4D_HasAnySurvivorLeftSafeArea())
+        {
+            g_bLeftSafeArea = true;
+            g_fSafeAreaLeaveTime = GetEngineTime();
+            if (gC_DebugRebreather.BoolValue) LogToFileEx(g_sLogPath, "[BOSSDBG] SAFE AREA LEFT (auto) at time=%.0f", g_fSafeAreaLeaveTime);
+        }
+        else
+        {
+            return false;
+        }
+    }
+
     return (GetEngineTime() - g_fSafeAreaLeaveTime) >= lock;
 }
 
@@ -508,29 +570,87 @@ void StartBossBlock()
     if (gC_BossChat.BoolValue) { char msg[128]; Format(msg, sizeof(msg), "\x04[DI] Boss block %.1fs", rebr); PrintToRootAdmins(msg); }
     DebugLog("Boss block started: %.1f s, flow %.0f", rebr, g_fBossBlockStartFlow);
     g_hBossRebreather = CreateTimer(rebr, Timer_BossRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+
+    if (gC_DebugRebreather.BoolValue)
+        LogToFileEx(g_sLogPath, "[BOSSDBG] BLOCK START | intensity=%.6f flowStart=%.0f unblockNeed=%.0f carryover=%d timerExists=%d",
+            g_fBossIntensity, g_fBossBlockStartFlow, g_fBossFlowUnblockCurrent, g_bBossBlockCarryover ? 1 : 0, g_hBossRebreather != null);
 }
 public Action Timer_BossRebreatherEnd(Handle timer)
 {
     g_hBossRebreather = null;
+
+    float curFlow = GetFarthestFlowDistance();
+    bool canDecay = (gC_DecaySafeAreaLockout.FloatValue <= 0.0) ||
+                    (g_bLeftSafeArea && (GetEngineTime() - g_fSafeAreaLeaveTime) >= gC_DecaySafeAreaLockout.FloatValue);
+
+    if (gC_DebugRebreather.BoolValue)
+        LogToFileEx(g_sLogPath, "[BOSSDBG] TIMER FIRED | intensity=%.6f threshold=%.1f blockActive=%d flowStart=%.0f curFlow=%.0f need=%.0f eventActive=%d safeArea=%d canDecay=%d",
+            g_fBossIntensity, gC_BossThreshold.FloatValue, g_bBossBlockActive ? 1 : 0,
+            g_fBossBlockStartFlow, curFlow, g_fBossFlowUnblockCurrent, g_bEventActive ? 1 : 0,
+            g_bLeftSafeArea ? 1 : 0, canDecay ? 1 : 0);
+
     if (!g_bEventActive) { g_bBossBlockActive = false; return Plugin_Stop; }
-    if (g_fBossIntensity >= gC_BossThreshold.FloatValue) { g_hBossRebreather = CreateTimer(gC_BossRebreather.FloatValue, Timer_BossRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE); return Plugin_Stop; }
-    g_bBossBlockActive = false; EvaluateBossBlocking(); return Plugin_Stop;
+
+    if (g_fBossIntensity >= gC_BossThreshold.FloatValue)
+    {
+        if (gC_DebugRebreather.BoolValue) LogToFileEx(g_sLogPath, "[BOSSDBG] TIMER RENEW (intensity >= threshold)");
+        g_hBossRebreather = CreateTimer(gC_BossRebreather.FloatValue, Timer_BossRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+        return Plugin_Stop;
+    }
+
+    g_bBossBlockActive = false;
+    if (gC_DebugRebreather.BoolValue) LogToFileEx(g_sLogPath, "[BOSSDBG] TIMER RELEASE (intensity below threshold)");
+    EvaluateBossBlocking();
+    return Plugin_Stop;
 }
+
 void CheckBossFlowUnblock()
 {
     if (!g_bBossBlockActive) return;
     float curFlow = GetFarthestFlowDistance();
-    if (curFlow - g_fBossBlockStartFlow >= g_fBossFlowUnblockCurrent)
+    float traveled = curFlow - g_fBossBlockStartFlow;
+
+    if (gC_DebugRebreather.BoolValue)
+        LogToFileEx(g_sLogPath, "[BOSSDBG] FLOWCHECK | curFlow=%.0f startFlow=%.0f traveled=%.0f need=%.0f timerExists=%d",
+            curFlow, g_fBossBlockStartFlow, traveled, g_fBossFlowUnblockCurrent, g_hBossRebreather != null);
+
+    if (traveled >= g_fBossFlowUnblockCurrent)
     {
-        if (g_hBossRebreather != null) { KillTimer(g_hBossRebreather); g_hBossRebreather = null; }
-        if (g_fBossIntensity < gC_BossThreshold.FloatValue) { g_bBossBlockActive = false; EvaluateBossBlocking(); }
-        else { g_fBossBlockStartFlow = curFlow; g_hBossRebreather = CreateTimer(gC_BossRebreather.FloatValue, Timer_BossRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE); }
+        if (gC_DebugRebreather.BoolValue)
+            LogToFileEx(g_sLogPath, "[BOSSDBG] FLOWCHECK UNBLOCK CONDITION MET: curFlow=%.0f startFlow=%.0f need=%.0f",
+                curFlow, g_fBossBlockStartFlow, g_fBossFlowUnblockCurrent);
+
+        if (g_hBossRebreather != null)
+        {
+            KillTimer(g_hBossRebreather);
+            g_hBossRebreather = null;
+            if (gC_DebugRebreather.BoolValue) LogToFileEx(g_sLogPath, "[BOSSDBG] FLOWCHECK KILLED TIMER | intensity=%.6f", g_fBossIntensity);
+        }
+
+        if (g_fBossIntensity < gC_BossThreshold.FloatValue)
+        {
+            g_bBossBlockActive = false;
+            if (gC_DebugRebreather.BoolValue) LogToFileEx(g_sLogPath, "[BOSSDBG] FLOWCHECK RELEASE (intensity below threshold)");
+            EvaluateBossBlocking();
+        }
+        else
+        {
+            g_fBossBlockStartFlow = curFlow;
+            if (gC_DebugRebreather.BoolValue) LogToFileEx(g_sLogPath, "[BOSSDBG] FLOWCHECK RESET START & NEW TIMER (intensity high)");
+            g_hBossRebreather = CreateTimer(gC_BossRebreather.FloatValue, Timer_BossRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+        }
     }
 }
+
 void ApplyBossDecay()
 {
     if (!gC_BossDecayEnable.BoolValue || !g_bEventActive || !gC_BossTrack.BoolValue || !g_bModeAllowed) return;
-    if (!CanDecay()) return;
+
+    bool canDecay = (gC_DecaySafeAreaLockout.FloatValue <= 0.0) ||
+                    (g_bLeftSafeArea && (GetEngineTime() - g_fSafeAreaLeaveTime) >= gC_DecaySafeAreaLockout.FloatValue);
+
+    if (!canDecay) return;
+
     float now = GetEngineTime();
     if (now - g_fBossLastDamageTime < gC_BossDecayDelay.FloatValue) return;
     float lockout = gC_BossDecayLockout.FloatValue;
@@ -541,7 +661,9 @@ void ApplyBossDecay()
     float old = g_fBossIntensity;
     g_fBossIntensity -= decay;
     if (g_fBossIntensity < 0.0) g_fBossIntensity = 0.0;
-    if (old != g_fBossIntensity) DebugLog("Boss decay: %.2f -> %.2f", old, g_fBossIntensity);
+    if (old != g_fBossIntensity && gC_DebugRebreather.BoolValue)
+        LogToFileEx(g_sLogPath, "[BOSSDBG] DECAY | %.4f -> %.4f (safeArea=%d canDecay=%d)",
+            old, g_fBossIntensity, g_bLeftSafeArea ? 1 : 0, canDecay ? 1 : 0);
     EvaluateBossBlocking();
 }
 
@@ -773,18 +895,43 @@ void ApplyDisasterFatigueBump()
 public Action Timer_Check(Handle timer)
 {
     if (!gC_Enable.BoolValue || !g_bModeAllowed || !g_bEventActive) return Plugin_Continue;
+
+    if (g_bHordeBlockActive && g_hHordeRebreather == null)
+    {
+        if (gC_DebugRebreather.BoolValue) LogToFileEx(g_sLogPath, "[BOSSDBG] Timer_Check: Horde timer was NULL – recreating");
+        g_hHordeRebreather = CreateTimer(gC_HordeRebreather.FloatValue, Timer_HordeRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+    }
+    if (g_bSpecialBlockActive && g_hSpecialRebreather == null)
+    {
+        if (gC_DebugRebreather.BoolValue) LogToFileEx(g_sLogPath, "[BOSSDBG] Timer_Check: Special timer was NULL – recreating");
+        g_hSpecialRebreather = CreateTimer(gC_SpecialRebreather.FloatValue, Timer_SpecialRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+    }
+    if (g_bBossBlockActive && g_hBossRebreather == null)
+    {
+        if (gC_DebugRebreather.BoolValue) LogToFileEx(g_sLogPath, "[BOSSDBG] Timer_Check: Boss timer was NULL – recreating");
+        g_hBossRebreather = CreateTimer(gC_BossRebreather.FloatValue, Timer_BossRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+    }
+    if (g_bFatigueBlockActive && g_hFatigueRebreather == null)
+    {
+        if (gC_DebugRebreather.BoolValue) LogToFileEx(g_sLogPath, "[BOSSDBG] Timer_Check: Fatigue timer was NULL – recreating");
+        g_hFatigueRebreather = CreateTimer(gC_FatigueRebreather.FloatValue, Timer_FatigueRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+    }
+
     ApplyHordeDecay();
     ApplySpecialDecay();
     ApplyBossDecay();
     ApplyFatigueDecay();
+
     CheckHordeFlowUnblock();
     CheckSpecialFlowUnblock();
     CheckBossFlowUnblock();
     CheckFatigueFlowUnblock();
+
     EvaluateHordeBlocking();
     EvaluateSpecialBlocking();
     EvaluateBossBlocking();
     EvaluateFatigueBlocking();
+
     return Plugin_Continue;
 }
 
@@ -868,13 +1015,39 @@ public Action Timer_HUD(Handle timer, any data)
 
 public void Event_ClearState(Event event, const char[] name, bool dontBroadcast)
 {
+    if (gC_DebugRebreather.BoolValue) LogToFileEx(g_sLogPath, "[BOSSDBG] Event_ClearState triggered: event=%s", name);
+
     if (StrEqual(name, "map_transition"))
     {
         float curFlow = GetFarthestFlowDistance();
-        if (g_bHordeBlockActive) { g_fHordeRemainingFlow = g_fHordeFlowUnblockCurrent - (curFlow - g_fHordeBlockStartFlow); if (g_fHordeRemainingFlow < 0.0) g_fHordeRemainingFlow = 0.0; g_bHordeBlockCarryover = true; }
-        if (g_bSpecialBlockActive) { g_fSpecialRemainingFlow = g_fSpecialFlowUnblockCurrent - (curFlow - g_fSpecialBlockStartFlow); if (g_fSpecialRemainingFlow < 0.0) g_fSpecialRemainingFlow = 0.0; g_bSpecialBlockCarryover = true; }
-        if (g_bBossBlockActive) { g_fBossRemainingFlow = g_fBossFlowUnblockCurrent - (curFlow - g_fBossBlockStartFlow); if (g_fBossRemainingFlow < 0.0) g_fBossRemainingFlow = 0.0; g_bBossBlockCarryover = true; }
-        if (g_bFatigueBlockActive) { g_fFatigueRemainingFlow = g_fFatigueFlowUnblockCurrent - (curFlow - g_fFatigueBlockStartFlow); if (g_fFatigueRemainingFlow < 0.0) g_fFatigueRemainingFlow = 0.0; g_bFatigueBlockCarryover = true; }
+
+        if (g_bHordeBlockActive)
+        {
+            g_fHordeRemainingFlow = g_fHordeFlowUnblockCurrent - (curFlow - g_fHordeBlockStartFlow);
+            if (g_fHordeRemainingFlow < 0.0) g_fHordeRemainingFlow = 0.0;
+            g_bHordeBlockCarryover = true;
+        }
+        if (g_bSpecialBlockActive)
+        {
+            g_fSpecialRemainingFlow = g_fSpecialFlowUnblockCurrent - (curFlow - g_fSpecialBlockStartFlow);
+            if (g_fSpecialRemainingFlow < 0.0) g_fSpecialRemainingFlow = 0.0;
+            g_bSpecialBlockCarryover = true;
+        }
+        if (g_bBossBlockActive)
+        {
+            g_fBossRemainingFlow = g_fBossFlowUnblockCurrent - (curFlow - g_fBossBlockStartFlow);
+            if (g_fBossRemainingFlow < 0.0) g_fBossRemainingFlow = 0.0;
+            g_bBossBlockCarryover = true;
+            if (gC_DebugRebreather.BoolValue)
+                LogToFileEx(g_sLogPath, "[BOSSDBG] Map transition – saving carryover: blockActive=%d curFlow=%.0f startFlow=%.0f unblockNeed=%.0f remainingFlow=%.0f",
+                    g_bBossBlockActive, curFlow, g_fBossBlockStartFlow, g_fBossFlowUnblockCurrent, g_fBossRemainingFlow);
+        }
+        if (g_bFatigueBlockActive)
+        {
+            g_fFatigueRemainingFlow = g_fFatigueFlowUnblockCurrent - (curFlow - g_fFatigueBlockStartFlow);
+            if (g_fFatigueRemainingFlow < 0.0) g_fFatigueRemainingFlow = 0.0;
+            g_bFatigueBlockCarryover = true;
+        }
     }
 
     g_bEventActive = false;
@@ -887,6 +1060,8 @@ public void Event_ClearState(Event event, const char[] name, bool dontBroadcast)
 
 public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
 {
+    if (gC_DebugRebreather.BoolValue) LogToFileEx(g_sLogPath, "[BOSSDBG] Event_RoundStart triggered");
+
     g_bEventActive = true;
     g_bLeftSafeArea = false;
     g_fSafeAreaLeaveTime = 0.0;
