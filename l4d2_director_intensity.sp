@@ -43,7 +43,7 @@ public Plugin myinfo = {
     name = "L4D2 Director Intensity 2.0",
     author = "Tighty-Whitey",
     description = "Adaptive director intensity and disaster fatigue.",
-    version = "1.1",
+    version = "1.2",
     url = ""
 };
 
@@ -263,7 +263,7 @@ public void OnMapStart()
 
     if (g_bHordeBlockCarryover)
     {
-        if (g_fHordeRemainingFlow > 0.0 && g_fHordeIntensity >= gC_HordeThreshold.FloatValue)
+        if (g_fHordeRemainingFlow > 0.0)
         {
             g_fHordeFlowUnblockCurrent = g_fHordeRemainingFlow;
             StartHordeBlock();
@@ -273,7 +273,7 @@ public void OnMapStart()
     }
     if (g_bSpecialBlockCarryover)
     {
-        if (g_fSpecialRemainingFlow > 0.0 && g_fSpecialIntensity >= gC_SpecialThreshold.FloatValue)
+        if (g_fSpecialRemainingFlow > 0.0)
         {
             g_fSpecialFlowUnblockCurrent = g_fSpecialRemainingFlow;
             StartSpecialBlock();
@@ -283,7 +283,7 @@ public void OnMapStart()
     }
     if (g_bBossBlockCarryover)
     {
-        if (g_fBossRemainingFlow > 0.0 && g_fBossIntensity >= gC_BossThreshold.FloatValue)
+        if (g_fBossRemainingFlow > 0.0)
         {
             g_fBossFlowUnblockCurrent = g_fBossRemainingFlow;
             StartBossBlock();
@@ -293,7 +293,7 @@ public void OnMapStart()
     }
     if (g_bFatigueBlockCarryover)
     {
-        if (g_fFatigueRemainingFlow > 0.0 && g_fFatigue >= gC_FatigueThreshold.FloatValue)
+        if (g_fFatigueRemainingFlow > 0.0)
         {
             g_fFatigueFlowUnblockCurrent = g_fFatigueRemainingFlow;
             StartFatigueBlock();
@@ -444,8 +444,12 @@ void StartHordeBlock()
     if (!gC_HordeTrack.BoolValue || g_bHordeBlockActive || !g_bEventActive || !g_bModeAllowed) return;
     if (g_hHordeRebreather != null) { KillTimer(g_hHordeRebreather); g_hHordeRebreather = null; }
     g_bHordeBlockActive = true;
-    g_fHordeBlockStartFlow = GetFarthestFlowDistance();
-    if (!g_bHordeBlockCarryover) g_fHordeFlowUnblockCurrent = gC_HordeFlowUnblock.FloatValue;
+    g_fHordeBlockStartFlow = g_bHordeBlockCarryover ? 0.0 : GetFarthestFlowDistance();
+    if (!g_bHordeBlockCarryover)
+    {
+        g_fHordeRemainingFlow = 0.0;
+        g_fHordeFlowUnblockCurrent = gC_HordeFlowUnblock.FloatValue;
+    }
     float rebr = gC_HordeRebreather.FloatValue;
     if (gC_HordeChat.BoolValue) { char msg[128]; Format(msg, sizeof(msg), "\x04[DI] Horde block %.1fs", rebr); PrintToRootAdmins(msg); }
     DebugLog("Horde block started: %.1f s, flow %.0f", rebr, g_fHordeBlockStartFlow);
@@ -504,8 +508,12 @@ void StartSpecialBlock()
     if (!gC_SpecialTrack.BoolValue || g_bSpecialBlockActive || !g_bEventActive || !g_bModeAllowed) return;
     if (g_hSpecialRebreather != null) { KillTimer(g_hSpecialRebreather); g_hSpecialRebreather = null; }
     g_bSpecialBlockActive = true;
-    g_fSpecialBlockStartFlow = GetFarthestFlowDistance();
-    if (!g_bSpecialBlockCarryover) g_fSpecialFlowUnblockCurrent = gC_SpecialFlowUnblock.FloatValue;
+    g_fSpecialBlockStartFlow = g_bSpecialBlockCarryover ? 0.0 : GetFarthestFlowDistance();
+    if (!g_bSpecialBlockCarryover)
+    {
+        g_fSpecialRemainingFlow = 0.0;
+        g_fSpecialFlowUnblockCurrent = gC_SpecialFlowUnblock.FloatValue;
+    }
     float rebr = gC_SpecialRebreather.FloatValue;
     if (gC_SpecialChat.BoolValue) { char msg[128]; Format(msg, sizeof(msg), "\x04[DI] Special block %.1fs", rebr); PrintToRootAdmins(msg); }
     DebugLog("Special block started: %.1f s, flow %.0f", rebr, g_fSpecialBlockStartFlow);
@@ -564,8 +572,12 @@ void StartBossBlock()
     if (!gC_BossTrack.BoolValue || g_bBossBlockActive || !g_bEventActive || !g_bModeAllowed) return;
     if (g_hBossRebreather != null) { KillTimer(g_hBossRebreather); g_hBossRebreather = null; }
     g_bBossBlockActive = true;
-    g_fBossBlockStartFlow = GetFarthestFlowDistance();
-    if (!g_bBossBlockCarryover) g_fBossFlowUnblockCurrent = gC_BossFlowUnblock.FloatValue;
+    g_fBossBlockStartFlow = g_bBossBlockCarryover ? 0.0 : GetFarthestFlowDistance();
+    if (!g_bBossBlockCarryover)
+    {
+        g_fBossRemainingFlow = 0.0;
+        g_fBossFlowUnblockCurrent = gC_BossFlowUnblock.FloatValue;
+    }
     float rebr = gC_BossRebreather.FloatValue;
     if (gC_BossChat.BoolValue) { char msg[128]; Format(msg, sizeof(msg), "\x04[DI] Boss block %.1fs", rebr); PrintToRootAdmins(msg); }
     DebugLog("Boss block started: %.1f s, flow %.0f", rebr, g_fBossBlockStartFlow);
@@ -689,8 +701,12 @@ void StartFatigueBlock()
     if (!gC_FatigueEnable.BoolValue || g_bFatigueBlockActive || !g_bModeAllowed) return;
     if (g_hFatigueRebreather != null) { KillTimer(g_hFatigueRebreather); g_hFatigueRebreather = null; }
     g_bFatigueBlockActive = true;
-    g_fFatigueBlockStartFlow = GetFarthestFlowDistance();
-    if (!g_bFatigueBlockCarryover) g_fFatigueFlowUnblockCurrent = gC_FatigueFlowUnblock.FloatValue;
+    g_fFatigueBlockStartFlow = g_bFatigueBlockCarryover ? 0.0 : GetFarthestFlowDistance();
+    if (!g_bFatigueBlockCarryover)
+    {
+        g_fFatigueRemainingFlow = 0.0;
+        g_fFatigueFlowUnblockCurrent = gC_FatigueFlowUnblock.FloatValue;
+    }
     float rebr = gC_FatigueRebreather.FloatValue;
     if (gC_FatigueChat.BoolValue) { char msg[128]; Format(msg, sizeof(msg), "\x04[DI] Fatigue block %.1fs", rebr); PrintToRootAdmins(msg); }
     DebugLog("Fatigue block started: %.1f s, flow %.0f", rebr, g_fFatigueBlockStartFlow);
