@@ -5,7 +5,7 @@
 #include <sdktools>
 #include <left4dhooks>
 
-#define PLUGIN_VERSION "1.1"
+#define PLUGIN_VERSION "1.2"
 #define LOG_FILE "logs/item_director_debug.log"
 
 ConVar g_cvEnable;
@@ -111,6 +111,7 @@ ConVar g_cvUpgradePackRadiusIgnore;
 ConVar g_cvUpgradePackChance;
 ConVar g_cvUpgradePackDebug;
 ConVar g_cvUpgradePackHud;
+ConVar g_cvUpgradePackRadius;
 
 ConVar g_cvBondingDebug;
 ConVar g_cvBondingHud;
@@ -284,6 +285,7 @@ float  g_fUpgradePackRadiusIgnore;
 int    g_iUpgradePackChance;
 bool   g_bUpgradePackDebug;
 bool   g_bUpgradePackHud;
+float g_fUpgradePackRadius = 1000.0;
 
 float g_fUpgradePackNextFlow = -1.0;
 bool  g_bUpgradePackPending   = false;
@@ -380,7 +382,7 @@ public Plugin myinfo = {
     name = "Item Director",
     author = "Tighty-Whitey",
     description = "Adaptive item director",
-    version = "1.1",
+    version = "1.2",
     url = ""
 };
 
@@ -479,6 +481,7 @@ public void OnPluginStart()
     g_cvLaserSightHud           = CreateConVar("item_director_lasersight_hud_enable",         "0",     "Show laser‑sight HUD (0=Off, 1=On)", FCVAR_NOTIFY);
     
     g_cvUpgradePackEnable        = CreateConVar("item_director_upgradepack_enable",           "1",    "Enable chance‑based upgrade pack spawning (0=Off, 1=On)", FCVAR_NOTIFY);
+    g_cvUpgradePackRadius = CreateConVar("item_director_upgradepack_radius", "1000.0", "Outer radius for upgrade pack spawn (0=no limit)", FCVAR_NOTIFY);
     g_cvUpgradePackRadiusIgnore  = CreateConVar("item_director_upgradepack_radius_ignore",    "700.0","Inner radius – upgrade pack will NOT spawn if survivor is closer than this", FCVAR_NOTIFY);
     g_cvUpgradePackChance        = CreateConVar("item_director_upgradepack_chance",           "33",   "Percent chance to spawn when flow target is reached", FCVAR_NOTIFY);
     g_cvUpgradePackDebug         = CreateConVar("item_director_upgradepack_debug",            "0",    "Write upgrade pack debug messages to log (0=Off, 1=On)", FCVAR_NOTIFY);
@@ -593,6 +596,7 @@ public void OnPluginStart()
     g_cvLaserSightChanceFlowRoll.AddChangeHook(OnCvarChanged);
     g_cvLaserSightChance.AddChangeHook(OnCvarChanged);
     g_cvUpgradePackEnable.AddChangeHook(OnCvarChanged);
+    g_cvUpgradePackRadius.AddChangeHook(OnCvarChanged);
     g_cvUpgradePackRadiusIgnore.AddChangeHook(OnCvarChanged);
     g_cvUpgradePackChance.AddChangeHook(OnCvarChanged);
     g_cvUpgradePackDebug.AddChangeHook(OnCvarChanged);
@@ -638,7 +642,7 @@ public void OnPluginStart()
     RegAdminCmd("sm_teleportammo", Cmd_TeleportAmmo, ADMFLAG_ROOT, "Teleport to the next spawned ammo");
     RegAdminCmd("sm_teleportthrowable", Cmd_TeleportThrowable, ADMFLAG_ROOT, "Teleport to the next throwable item in range");
     RegAdminCmd("sm_teleportlaser", Cmd_TeleportLaser, ADMFLAG_ROOT, "Teleport to the next laser‑sight item in range");
-    RegAdminCmd("c", Cmd_TeleportUpgradePack, ADMFLAG_ROOT, "Teleport to the next upgrade pack in range");
+    RegAdminCmd("sm_teleportupgradepack", Cmd_TeleportUpgradePack, ADMFLAG_ROOT, "Teleport to the next upgrade pack in range");
 }
 
 void OnPillsDecayChanged(ConVar convar, const char[] oldValue, const char[] newValue)
@@ -753,6 +757,7 @@ void ApplyCvars()
     g_bLaserSightHud            = g_cvLaserSightHud.BoolValue;
 
     g_bUpgradePackEnable       = g_cvUpgradePackEnable.BoolValue;
+    g_fUpgradePackRadius       = g_cvUpgradePackRadius.FloatValue;
     g_fUpgradePackRadiusIgnore = g_cvUpgradePackRadiusIgnore.FloatValue;
     g_iUpgradePackChance       = g_cvUpgradePackChance.IntValue;
     g_bUpgradePackDebug        = g_cvUpgradePackDebug.BoolValue;
@@ -816,6 +821,7 @@ void ApplyCvars()
     if (g_fUpgradePackRadiusIgnore < 0.0) g_fUpgradePackRadiusIgnore = 0.0;
     if (g_iUpgradePackChance < 0) g_iUpgradePackChance = 0;
     if (g_iUpgradePackChance > 100) g_iUpgradePackChance = 100;
+    if (g_fUpgradePackRadius < 0.0) g_fUpgradePackRadius = 0.0;
     if (g_fBondingInterval <= 0.0) g_fBondingInterval = 1.0;
     g_fBondingIncrementPerSecond = 0.1 / g_fBondingInterval;
     if (g_fBondingThreshold < 0.0) g_fBondingThreshold = 0.0;
@@ -1526,7 +1532,9 @@ void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
         g_bTempHealthSpawned[i] = false;
         g_bThrowableSpawned[i] = false;
         g_bLaserSightSpawned[i] = false;
-        g_bUpgradePackSpawned[i] = false;           
+        g_bUpgradePackSpawned[i] = false;
+        g_bNearSaferoom[i] = false;
+        g_bNearFinale[i] = false;           
     }
 
     for (int c = 0; c < 4; c++)
@@ -2706,7 +2714,7 @@ bool SpawnDefibAtClosestValid()
 
     for (int i = 0; i < g_iSpawnerCount; i++)
     {
-        if (g_bUsedIndex[i] || g_bDefibSpawned[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
+        if (g_bUsedIndex[i] || g_bDefibSpawned[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i] || g_bUpgradePackSpawned[i]) continue;
         if (g_bNearCabinet[i] && !g_bDefibNearCabinet)
         continue;
         if (g_bNearSaferoom[i] && g_fSaferoomIgnoreRadius > 0.0)
@@ -3521,6 +3529,7 @@ Action Timer_CheckCleanup(Handle timer)
         int idx = g_aCleanupIndex.Get(i);
         int type = g_aCleanupType.Get(i);
 
+        // Entity gone (picked up, removed, etc.)
         if (entity == INVALID_ENT_REFERENCE || !IsValidEntity(entity))
         {
             if (g_bCleanupRespawnEnable)
@@ -3533,6 +3542,7 @@ Action Timer_CheckCleanup(Handle timer)
                 else if (type == 6) g_bThrowableSpawned[idx] = false;
                 else if (type == 7) g_bLaserSightSpawned[idx] = false;
                 else if (type == 8) g_bUpgradePackSpawned[idx] = false;
+                g_bUsedIndex[idx] = false;            
             }
             g_aCleanupItems.Erase(i);
             g_aCleanupTimers.Erase(i);
@@ -3576,14 +3586,15 @@ Action Timer_CheckCleanup(Handle timer)
                     else if (type == 5) g_bTempHealthSpawned[idx] = false;
                     else if (type == 6) g_bThrowableSpawned[idx] = false;
                     else if (type == 7) g_bLaserSightSpawned[idx] = false;
+                    else if (type == 8) g_bUpgradePackSpawned[idx] = false;
                     g_bUsedIndex[idx] = false;
                     LogDebug("Cleanup: Removed %s at index %d (away for %.0f sec) – spawn point re-enabled",
-                    type == 0 ? "weapon" : (type == 1 ? "medkit" : (type == 2 ? "defib" : (type == 4 ? "ammo" : (type == 5 ? "temphealth" : (type == 6 ? "throwable" : "laser"))))), idx, fCurrent);
+                    type == 0 ? "weapon" : (type == 1 ? "medkit" : (type == 2 ? "defib" : (type == 4 ? "ammo" : (type == 5 ? "temphealth" : (type == 6 ? "throwable" : (type == 7 ? "laser" : "upgradepack")))))), idx, fCurrent);
                 }
                 else
                 {
                     LogDebug("Cleanup: Removed %s at index %d (away for %.0f sec) – spawn point remains disabled",
-                    type == 0 ? "weapon" : (type == 1 ? "medkit" : (type == 2 ? "defib" : (type == 4 ? "ammo" : (type == 5 ? "temphealth" : (type == 6 ? "throwable" : "laser"))))), idx, fCurrent);
+                    type == 0 ? "weapon" : (type == 1 ? "medkit" : (type == 2 ? "defib" : (type == 4 ? "ammo" : (type == 5 ? "temphealth" : (type == 6 ? "throwable" : (type == 7 ? "laser" : "upgradepack")))))), idx, fCurrent);
                 }
                 g_aCleanupItems.Erase(i);
                 g_aCleanupTimers.Erase(i);
@@ -4819,12 +4830,15 @@ Action Timer_CheckProximity(Handle timer)
 
                 float vClientOrigin[3];
                 GetClientAbsOrigin(client, vClientOrigin);
-                if (GetVectorDistance(vClientOrigin, g_vSpawnerPos[i]) <= g_fMedkitRadiusIgnore ||
-                GetVectorDistance(vClientOrigin, g_vSpawnerPos[i]) <= g_fDefibRadiusIgnore)
-                {
-                    entered = true;
-                    break;
-                }
+float dist = GetVectorDistance(vClientOrigin, g_vSpawnerPos[i]);
+if (dist <= g_fMedkitRadiusIgnore     || dist <= g_fDefibRadiusIgnore ||
+    dist <= g_fWeaponRadiusIgnore     || dist <= g_fAmmoRadiusIgnore   ||
+    dist <= g_fThrowableRadiusIgnore  || dist <= g_fLaserSightRadiusIgnore ||
+    dist <= g_fUpgradePackRadiusIgnore || dist <= g_fTempHealthSpawnIgnoreRadius)
+{
+    entered = true;
+    break;
+}
             }
             if (entered)
             {
@@ -5061,7 +5075,7 @@ Action Timer_CheckProximity(Handle timer)
             float bestDist = 999999.0;
             for (int i = 0; i < g_iSpawnerCount; i++)
             {
-                if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
+                if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i] || g_bUpgradePackSpawned[i]) continue;
                 if (g_bNearCabinet[i] && !g_bWeaponNearCabinet)
                 continue;
                 if (g_bNearSaferoom[i] && g_fSaferoomIgnoreRadius > 0.0)
@@ -5154,7 +5168,7 @@ Action Timer_CheckProximity(Handle timer)
                 float bestDist = 999999.0;
                 for (int i = 0; i < g_iSpawnerCount; i++)
                 {
-                    if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
+                    if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i] || g_bUpgradePackSpawned[i]) continue;
                     if (g_bNearCabinet[i] && !g_bWeaponNearCabinet) continue;
                     if (g_bNearSaferoom[i] && g_fSaferoomIgnoreRadius > 0.0) continue;
                     if (g_bNearFinale[i] && g_fFinaleIgnoreRadius > 0.0) continue;
@@ -5277,7 +5291,7 @@ Action Timer_CheckProximity(Handle timer)
                         float bestDist = 999999.0;
                         for (int i = 0; i < g_iSpawnerCount; i++)
                         {
-                            if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
+                    if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i] || g_bUpgradePackSpawned[i]) continue;
                             if (g_bNearCabinet[i] && !g_bWeaponNearCabinet) continue;
                             if (g_bNearSaferoom[i] && g_fSaferoomIgnoreRadius > 0.0) continue;
                             if (g_bNearFinale[i] && g_fFinaleIgnoreRadius > 0.0) continue;
@@ -5517,7 +5531,8 @@ Action Timer_CheckProximity(Handle timer)
             float bestDist = 999999.0;
             for (int i = 0; i < g_iSpawnerCount; i++)
             {
-                if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i]) continue;
+                if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] ||
+                g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i] || g_bUpgradePackSpawned[i]) continue;
                 if (g_bNearCabinet[i] && !g_bWeaponNearCabinet) continue;
                 if (g_bNearSaferoom[i] && g_fSaferoomIgnoreRadius > 0.0) continue;
                 if (g_bNearFinale[i] && g_fFinaleIgnoreRadius > 0.0) continue;
@@ -5725,7 +5740,7 @@ Action Timer_CheckProximity(Handle timer)
                         float bestDist = 999999.0;
                         for (int i = 0; i < g_iSpawnerCount; i++)
                         {
-                            if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
+                            if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i] || g_bUpgradePackSpawned[i]) continue;
                             if (g_bNearCabinet[i] && !g_bWeaponNearCabinet) continue;
                             if (g_bNearSaferoom[i] && g_fSaferoomIgnoreRadius > 0.0) continue;
                             if (g_bNearFinale[i] && g_fFinaleIgnoreRadius > 0.0) continue;
@@ -5946,7 +5961,7 @@ Action Timer_CheckProximity(Handle timer)
                         float bestDist = 999999.0;
                         for (int i = 0; i < g_iSpawnerCount; i++)
                         {
-                            if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
+                            if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i] || g_bUpgradePackSpawned[i]) continue;
                             if (g_bNearCabinet[i] && !g_bWeaponNearCabinet) continue;
                             if (g_bNearSaferoom[i] && g_fSaferoomIgnoreRadius > 0.0) continue;
                             if (g_bNearFinale[i] && g_fFinaleIgnoreRadius > 0.0) continue;
@@ -6092,7 +6107,7 @@ if (g_bLaserSightEnable && g_fLaserSightRadius > 0.0)
                 float bestDist = 999999.0;
                 for (int i = 0; i < g_iSpawnerCount; i++)
                 {
-                    if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
+                    if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i] || g_bUpgradePackSpawned[i]) continue;
                     if (g_bNearCabinet[i] && !g_bWeaponNearCabinet) continue;
                     if (g_bNearSaferoom[i] && g_fSaferoomIgnoreRadius > 0.0) continue;
                     if (g_bNearFinale[i] && g_fFinaleIgnoreRadius > 0.0) continue;
@@ -6269,7 +6284,7 @@ if (g_bLaserSightEnable && g_fLaserSightRadius > 0.0)
                                 float bestDist = 999999.0;
                                 for (int i = 0; i < g_iSpawnerCount; i++)
                                 {
-                                    if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
+                                    if (g_bUsedIndex[i] || g_bWeaponSpawned[i] || g_bMedkitSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i] || g_bUpgradePackSpawned[i]) continue;
                                     if (g_bNearCabinet[i] && !g_bWeaponNearCabinet) continue;
                                     if (g_bNearSaferoom[i] && g_fSaferoomIgnoreRadius > 0.0) continue;
                                     if (g_bNearFinale[i] && g_fFinaleIgnoreRadius > 0.0) continue;
@@ -6389,11 +6404,10 @@ if (g_bUpgradePackEnable)
                     continue;
 
                 float dist = GetVectorDistance(vLead, g_vSpawnerPos[i]);
-                // Only check ignore radius (no outer radius max)
-                if (dist >= g_fUpgradePackRadiusIgnore)
-                {
-                    if (dist < bestDist) { bestDist = dist; bestIdx = i; }
-                }
+if (dist >= g_fUpgradePackRadiusIgnore && (g_fUpgradePackRadius <= 0.0 || dist <= g_fUpgradePackRadius))
+{
+    if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+}
             }
 
             if (bestIdx != -1)
@@ -6479,7 +6493,7 @@ if (g_bUpgradePackEnable)
                                 continue;
 
                             float dist = GetVectorDistance(vLead, g_vSpawnerPos[i]);
-                            if (dist >= g_fUpgradePackRadiusIgnore)
+                            if (dist >= g_fUpgradePackRadiusIgnore && (g_fUpgradePackRadius <= 0.0 || dist <= g_fUpgradePackRadius))
                             {
                                 if (dist < bestDist) { bestDist = dist; bestIdx = i; }
                             }
@@ -6649,10 +6663,12 @@ bool SpawnMedkitAtClosestValid()
 
     for (int i = 0; i < g_iSpawnerCount; i++)
     {
-        if (g_bUsedIndex[i] || g_bMedkitSpawned[i] || g_bWeaponSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i]) continue;
+        if (g_bUsedIndex[i] || g_bMedkitSpawned[i] || g_bWeaponSpawned[i] || g_bDefibSpawned[i] || g_bTempHealthSpawned[i] || g_bThrowableSpawned[i] || g_bLaserSightSpawned[i] || g_bUpgradePackSpawned[i]) continue;
         if (g_bNearCabinet[i] && !g_bMedkitNearCabinet)
         continue;
         if (g_bNearSaferoom[i] && g_fSaferoomIgnoreRadius > 0.0)
+        continue;
+        if (g_bNearFinale[i] && g_fFinaleIgnoreRadius > 0.0)
         continue;
 
         if (!g_bSpawnIfVisible)
