@@ -36,6 +36,13 @@ ConVar gC_FatigueInitialWeight, gC_FatigueExtraWeight, gC_FatigueResetCampaign;
 ConVar gC_DecaySafeAreaLockout;
 ConVar gC_DebugRebreather;
 
+// Finale coverage & skip
+ConVar gC_CoverFinales;
+ConVar gC_SkipDelay;
+
+// Fatigue no block in finales
+ConVar gC_NoFatigueFinale;
+
 ConVar g_hMPGameMode;
 bool  g_bModeAllowed = true;
 
@@ -43,7 +50,7 @@ public Plugin myinfo = {
     name = "L4D2 Director Intensity 2.0",
     author = "Tighty-Whitey",
     description = "Adaptive director intensity and disaster fatigue.",
-    version = "1.2",
+    version = "1.4",
     url = ""
 };
 
@@ -104,6 +111,10 @@ float g_fFatigueRemainingFlow = 0.0;
 // Boomer vomit tracking
 float g_fBoomerVomitUntil[MAXPLAYERS+1];
 
+// Finale state
+bool  g_bFinaleActive = false;
+Handle g_hSkipTimer = null;
+
 Handle g_hHUDTimer = null;
 char g_sLogPath[PLATFORM_MAX_PATH];
 
@@ -130,7 +141,7 @@ public void OnPluginStart()
     gC_HordeDecayLockout  = CreateConVar("director_intensity_horde_decay_lockout",    "30.0", "Seconds after a bump before decay resumes", FCVAR_NOTIFY, true, 0.0);
     gC_HordeHUD           = CreateConVar("director_intensity_horde_hud",              "0",    "Show horde intensity HUD (admin only)", FCVAR_NOTIFY, true, 0.0, true, 1.0);
     gC_HordeChat          = CreateConVar("director_intensity_horde_chat",             "0",    "Print horde block messages (admin only)", FCVAR_NOTIFY, true, 0.0, true, 1.0);
-    gC_HordeFlowUnblock   = CreateConVar("director_intensity_horde_flow_unblock",     "12000.0","Flow travel distance to attempt unblock", FCVAR_NOTIFY, true, 0.0);
+    gC_HordeFlowUnblock   = CreateConVar("director_intensity_horde_flow_unblock",     "15000.0","Flow travel distance to attempt unblock", FCVAR_NOTIFY, true, 0.0);
 
     // Special cvars
     gC_SpecialTrack         = CreateConVar("director_intensity_special_tracking",         "1",    "Enable special intensity", FCVAR_NOTIFY, true, 0.0, true, 1.0);
@@ -143,7 +154,7 @@ public void OnPluginStart()
     gC_SpecialDecayLockout  = CreateConVar("director_intensity_special_decay_lockout",    "30.0", "Seconds after a bump before decay resumes", FCVAR_NOTIFY, true, 0.0);
     gC_SpecialHUD           = CreateConVar("director_intensity_special_hud",              "0",    "Show special intensity HUD (admin only)", FCVAR_NOTIFY, true, 0.0, true, 1.0);
     gC_SpecialChat          = CreateConVar("director_intensity_special_chat",             "0",    "Print special block messages (admin only)", FCVAR_NOTIFY, true, 0.0, true, 1.0);
-    gC_SpecialFlowUnblock   = CreateConVar("director_intensity_special_flow_unblock",     "15000.0","Flow travel distance to attempt unblock", FCVAR_NOTIFY, true, 0.0);
+    gC_SpecialFlowUnblock   = CreateConVar("director_intensity_special_flow_unblock",     "18000.0","Flow travel distance to attempt unblock", FCVAR_NOTIFY, true, 0.0);
 
     // Boss cvars
     gC_BossTrack          = CreateConVar("director_intensity_boss_tracking",          "1",    "Enable boss (Tank/Witch) intensity", FCVAR_NOTIFY, true, 0.0, true, 1.0);
@@ -158,7 +169,7 @@ public void OnPluginStart()
     gC_BossDecayLockout   = CreateConVar("director_intensity_boss_decay_lockout",     "30.0", "Seconds after a bump before decay resumes", FCVAR_NOTIFY, true, 0.0);
     gC_BossHUD            = CreateConVar("director_intensity_boss_hud",               "0",    "Show boss intensity HUD (admin only)", FCVAR_NOTIFY, true, 0.0, true, 1.0);
     gC_BossChat           = CreateConVar("director_intensity_boss_chat",              "0",    "Print boss block messages (admin only)", FCVAR_NOTIFY, true, 0.0, true, 1.0);
-    gC_BossFlowUnblock    = CreateConVar("director_intensity_boss_flow_unblock",      "15000.0","Flow travel distance to attempt unblock", FCVAR_NOTIFY, true, 0.0);
+    gC_BossFlowUnblock    = CreateConVar("director_intensity_boss_flow_unblock",      "18000.0","Flow travel distance to attempt unblock", FCVAR_NOTIFY, true, 0.0);
 
     // Disaster fatigue cvars
     gC_FatigueEnable         = CreateConVar("director_intensity_disaster_fatigue_enable",           "1",    "Enable disaster fatigue", FCVAR_NOTIFY, true, 0.0, true, 1.0);
@@ -166,20 +177,27 @@ public void OnPluginStart()
     gC_FatigueDamageDivider  = CreateConVar("director_intensity_disaster_fatigue_damage_divider",   "2000.0","Fallback Fatigue damage divider (used if specific Tank/Witch divider is 0)", FCVAR_NOTIFY, true, 1.0);
     gC_FatigueTankDivider    = CreateConVar("director_intensity_fatigue_tank_damage_divider",       "4000.0","Tank damage divided by this to increase Fatigue (0 = use fallback)", FCVAR_NOTIFY, true, 0.0);
     gC_FatigueWitchDivider   = CreateConVar("director_intensity_fatigue_witch_damage_divider",      "2000.0","Witch damage divided by this to increase Fatigue (0 = use fallback)", FCVAR_NOTIFY, true, 0.0);
-    gC_FatigueRebreather     = CreateConVar("director_intensity_disaster_fatigue_rebreather",       "600.0","Fatigue block duration", FCVAR_NOTIFY, true, 0.0);
+    gC_FatigueRebreather     = CreateConVar("director_intensity_disaster_fatigue_rebreather",       "120.0","Fatigue block duration", FCVAR_NOTIFY, true, 0.0);
     gC_FatigueDecayEnable    = CreateConVar("director_intensity_disaster_fatigue_decay_enable",     "1",    "Enable fatigue decay", FCVAR_NOTIFY, true, 0.0, true, 1.0);
     gC_FatigueDecayInterval  = CreateConVar("director_intensity_disaster_fatigue_decay_interval",   "90.0", "Seconds to lose 0.1 fatigue", FCVAR_NOTIFY, true, 0.1);
     gC_FatigueDecayDelay     = CreateConVar("director_intensity_disaster_fatigue_decay_delay",      "60.0", "Seconds without damage before fatigue decay starts", FCVAR_NOTIFY, true, 0.0);
     gC_FatigueDecayLockout   = CreateConVar("director_intensity_disaster_fatigue_decay_lockout",    "30.0", "Seconds after a bump before decay resumes", FCVAR_NOTIFY, true, 0.0);
     gC_FatigueHUD            = CreateConVar("director_intensity_disaster_fatigue_hud",              "0",    "Show fatigue HUD (admin only)", FCVAR_NOTIFY, true, 0.0, true, 1.0);
     gC_FatigueChat           = CreateConVar("director_intensity_disaster_fatigue_chat",             "0",    "Print fatigue block messages (admin only)", FCVAR_NOTIFY, true, 0.0, true, 1.0);
-    gC_FatigueFlowUnblock    = CreateConVar("director_intensity_disaster_fatigue_flow_unblock",     "21000.0","Flow travel distance to attempt unblock", FCVAR_NOTIFY, true, 0.0);
-    gC_FatigueInitialWeight  = CreateConVar("director_intensity_disaster_fatigue_initial_weight",   "0.1",  "Multiplier for team health deficit bump", FCVAR_NOTIFY, true, 0.0);
-    gC_FatigueExtraWeight    = CreateConVar("director_intensity_disaster_fatigue_extra_weight",     "0.1",  "Multiplier for item deficiency bump", FCVAR_NOTIFY, true, 0.0);
+    gC_FatigueFlowUnblock    = CreateConVar("director_intensity_disaster_fatigue_flow_unblock",     "18000.0","Flow travel distance to attempt unblock", FCVAR_NOTIFY, true, 0.0);
+    gC_FatigueInitialWeight  = CreateConVar("director_intensity_disaster_fatigue_initial_weight",   "0.0",  "Multiplier for team health deficit bump", FCVAR_NOTIFY, true, 0.0);
+    gC_FatigueExtraWeight    = CreateConVar("director_intensity_disaster_fatigue_extra_weight",     "0.0",  "Multiplier for item deficiency bump", FCVAR_NOTIFY, true, 0.0);
     gC_FatigueResetCampaign  = CreateConVar("director_intensity_disaster_fatigue_reset_campaign",   "1",    "Reset fatigue on campaign start", FCVAR_NOTIFY, true, 0.0, true, 1.0);
 
     // Global decay safe-area lockout
-    gC_DecaySafeAreaLockout = CreateConVar("director_intensity_decay_safearea_lockout", "30.0", "Seconds after leaving safe area before ANY decay can start. 0 = off.", FCVAR_NOTIFY, true, 0.0);
+    gC_DecaySafeAreaLockout = CreateConVar("director_intensity_decay_safearea_lockout", "0", "Seconds after leaving safe area before ANY decay can start. 0 = off.", FCVAR_NOTIFY, true, 0.0);
+
+    // Finale coverage & skip
+    gC_CoverFinales = CreateConVar("director_intensity_cover_finales", "1", "Cover finales with blocks (0 = disable all blocks during finales, 1 = allow blocks & auto-skip if blocked)", FCVAR_NOTIFY, true, 0.0, true, 1.0);
+    gC_SkipDelay    = CreateConVar("director_intensity_finale_skip_delay", "3.0", "Delay (seconds) before auto-skipping a blocked finale (0 = instant)", FCVAR_NOTIFY, true, 0.0);
+
+    // Fatigue no block in finales
+    gC_NoFatigueFinale = CreateConVar("director_intensity_fatigue_no_finale_block", "0", "Prevent fatigue block during finales (1 = yes)", FCVAR_NOTIFY, true, 0.0, true, 1.0);
 
     // Rebreather debug logging (off by default)
     gC_DebugRebreather = CreateConVar("director_intensity_debug_rebreather", "0", "Log rebreather debug events to file (0/1)", FCVAR_NONE);
@@ -213,7 +231,11 @@ public void OnPluginStart()
             SDKHook(i, SDKHook_OnTakeDamage, OnTakeDamage);
 }
 
-public void OnClientPutInServer(int client) { SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage); }
+public void OnClientPutInServer(int client)
+{
+    SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage);
+    g_fBoomerVomitUntil[client] = 0.0;
+}
 public void OnClientDisconnect(int client) { SDKUnhook(client, SDKHook_OnTakeDamage, OnTakeDamage); }
 
 public void OnMapStart()
@@ -235,6 +257,9 @@ public void OnMapStart()
     g_fFatigueLastBumpTime = 0.0;
     KillAllTimers();
     UpdateAllowedGameMode();
+
+    g_bFinaleActive = false;
+    if (g_hSkipTimer != null) { KillTimer(g_hSkipTimer); g_hSkipTimer = null; }
 
     for (int i = 1; i <= MaxClients; i++)
         g_fBoomerVomitUntil[i] = 0.0;
@@ -312,6 +337,8 @@ public void OnMapEnd()
     g_bSpecialBlockActive = false;
     g_bBossBlockActive = false;
     g_bFatigueBlockActive = false;
+    g_bFinaleActive = false;
+    if (g_hSkipTimer != null) { KillTimer(g_hSkipTimer); g_hSkipTimer = null; }
 }
 
 void UpdateAllowedGameMode()
@@ -437,11 +464,13 @@ void EvaluateHordeBlocking()
 {
     if (!gC_HordeTrack.BoolValue || !gC_Enable.BoolValue || !g_bEventActive || !g_bModeAllowed) return;
     if (g_bHordeBlockActive) return;
+    if (g_bFinaleActive && !gC_CoverFinales.BoolValue) return;
     if (g_fHordeIntensity >= gC_HordeThreshold.FloatValue) StartHordeBlock();
 }
 void StartHordeBlock()
 {
     if (!gC_HordeTrack.BoolValue || g_bHordeBlockActive || !g_bEventActive || !g_bModeAllowed) return;
+    if (g_bFinaleActive && !gC_CoverFinales.BoolValue) return;
     if (g_hHordeRebreather != null) { KillTimer(g_hHordeRebreather); g_hHordeRebreather = null; }
     g_bHordeBlockActive = true;
     g_fHordeBlockStartFlow = g_bHordeBlockCarryover ? 0.0 : GetFarthestFlowDistance();
@@ -454,13 +483,16 @@ void StartHordeBlock()
     if (gC_HordeChat.BoolValue) { char msg[128]; Format(msg, sizeof(msg), "\x04[DI] Horde block %.1fs", rebr); PrintToRootAdmins(msg); }
     DebugLog("Horde block started: %.1f s, flow %.0f", rebr, g_fHordeBlockStartFlow);
     g_hHordeRebreather = CreateTimer(rebr, Timer_HordeRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+    EvaluateFinaleSkip();
 }
 public Action Timer_HordeRebreatherEnd(Handle timer)
 {
     g_hHordeRebreather = null;
-    if (!g_bEventActive) { g_bHordeBlockActive = false; return Plugin_Stop; }
+    if (!g_bEventActive) { g_bHordeBlockActive = false; EvaluateFinaleSkip(); return Plugin_Stop; }
     if (g_fHordeIntensity >= gC_HordeThreshold.FloatValue) { g_hHordeRebreather = CreateTimer(gC_HordeRebreather.FloatValue, Timer_HordeRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE); return Plugin_Stop; }
-    g_bHordeBlockActive = false; EvaluateHordeBlocking(); return Plugin_Stop;
+    g_bHordeBlockActive = false; EvaluateHordeBlocking();
+    EvaluateFinaleSkip();
+    return Plugin_Stop;
 }
 void CheckHordeFlowUnblock()
 {
@@ -469,7 +501,7 @@ void CheckHordeFlowUnblock()
     if (curFlow - g_fHordeBlockStartFlow >= g_fHordeFlowUnblockCurrent)
     {
         if (g_hHordeRebreather != null) { KillTimer(g_hHordeRebreather); g_hHordeRebreather = null; }
-        if (g_fHordeIntensity < gC_HordeThreshold.FloatValue) { g_bHordeBlockActive = false; EvaluateHordeBlocking(); }
+        if (g_fHordeIntensity < gC_HordeThreshold.FloatValue) { g_bHordeBlockActive = false; EvaluateHordeBlocking(); EvaluateFinaleSkip(); }
         else { g_fHordeBlockStartFlow = curFlow; g_hHordeRebreather = CreateTimer(gC_HordeRebreather.FloatValue, Timer_HordeRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE); }
     }
 }
@@ -501,11 +533,13 @@ void EvaluateSpecialBlocking()
 {
     if (!gC_SpecialTrack.BoolValue || !gC_Enable.BoolValue || !g_bEventActive || !g_bModeAllowed) return;
     if (g_bSpecialBlockActive) return;
+    if (g_bFinaleActive && !gC_CoverFinales.BoolValue) return;
     if (g_fSpecialIntensity >= gC_SpecialThreshold.FloatValue) StartSpecialBlock();
 }
 void StartSpecialBlock()
 {
     if (!gC_SpecialTrack.BoolValue || g_bSpecialBlockActive || !g_bEventActive || !g_bModeAllowed) return;
+    if (g_bFinaleActive && !gC_CoverFinales.BoolValue) return;
     if (g_hSpecialRebreather != null) { KillTimer(g_hSpecialRebreather); g_hSpecialRebreather = null; }
     g_bSpecialBlockActive = true;
     g_fSpecialBlockStartFlow = g_bSpecialBlockCarryover ? 0.0 : GetFarthestFlowDistance();
@@ -518,13 +552,16 @@ void StartSpecialBlock()
     if (gC_SpecialChat.BoolValue) { char msg[128]; Format(msg, sizeof(msg), "\x04[DI] Special block %.1fs", rebr); PrintToRootAdmins(msg); }
     DebugLog("Special block started: %.1f s, flow %.0f", rebr, g_fSpecialBlockStartFlow);
     g_hSpecialRebreather = CreateTimer(rebr, Timer_SpecialRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+    EvaluateFinaleSkip();
 }
 public Action Timer_SpecialRebreatherEnd(Handle timer)
 {
     g_hSpecialRebreather = null;
-    if (!g_bEventActive) { g_bSpecialBlockActive = false; return Plugin_Stop; }
+    if (!g_bEventActive) { g_bSpecialBlockActive = false; EvaluateFinaleSkip(); return Plugin_Stop; }
     if (g_fSpecialIntensity >= gC_SpecialThreshold.FloatValue) { g_hSpecialRebreather = CreateTimer(gC_SpecialRebreather.FloatValue, Timer_SpecialRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE); return Plugin_Stop; }
-    g_bSpecialBlockActive = false; EvaluateSpecialBlocking(); return Plugin_Stop;
+    g_bSpecialBlockActive = false; EvaluateSpecialBlocking();
+    EvaluateFinaleSkip();
+    return Plugin_Stop;
 }
 void CheckSpecialFlowUnblock()
 {
@@ -533,7 +570,7 @@ void CheckSpecialFlowUnblock()
     if (curFlow - g_fSpecialBlockStartFlow >= g_fSpecialFlowUnblockCurrent)
     {
         if (g_hSpecialRebreather != null) { KillTimer(g_hSpecialRebreather); g_hSpecialRebreather = null; }
-        if (g_fSpecialIntensity < gC_SpecialThreshold.FloatValue) { g_bSpecialBlockActive = false; EvaluateSpecialBlocking(); }
+        if (g_fSpecialIntensity < gC_SpecialThreshold.FloatValue) { g_bSpecialBlockActive = false; EvaluateSpecialBlocking(); EvaluateFinaleSkip(); }
         else { g_fSpecialBlockStartFlow = curFlow; g_hSpecialRebreather = CreateTimer(gC_SpecialRebreather.FloatValue, Timer_SpecialRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE); }
     }
 }
@@ -565,11 +602,13 @@ void EvaluateBossBlocking()
 {
     if (!gC_BossTrack.BoolValue || !gC_Enable.BoolValue || !g_bEventActive || !g_bModeAllowed) return;
     if (g_bBossBlockActive) return;
+    if (g_bFinaleActive && !gC_CoverFinales.BoolValue) return;
     if (g_fBossIntensity >= gC_BossThreshold.FloatValue) StartBossBlock();
 }
 void StartBossBlock()
 {
     if (!gC_BossTrack.BoolValue || g_bBossBlockActive || !g_bEventActive || !g_bModeAllowed) return;
+    if (g_bFinaleActive && !gC_CoverFinales.BoolValue) return;
     if (g_hBossRebreather != null) { KillTimer(g_hBossRebreather); g_hBossRebreather = null; }
     g_bBossBlockActive = true;
     g_fBossBlockStartFlow = g_bBossBlockCarryover ? 0.0 : GetFarthestFlowDistance();
@@ -586,6 +625,8 @@ void StartBossBlock()
     if (gC_DebugRebreather.BoolValue)
         LogToFileEx(g_sLogPath, "[BOSSDBG] BLOCK START | intensity=%.6f flowStart=%.0f unblockNeed=%.0f carryover=%d timerExists=%d",
             g_fBossIntensity, g_fBossBlockStartFlow, g_fBossFlowUnblockCurrent, g_bBossBlockCarryover ? 1 : 0, g_hBossRebreather != null);
+
+    EvaluateFinaleSkip();
 }
 public Action Timer_BossRebreatherEnd(Handle timer)
 {
@@ -601,7 +642,7 @@ public Action Timer_BossRebreatherEnd(Handle timer)
             g_fBossBlockStartFlow, curFlow, g_fBossFlowUnblockCurrent, g_bEventActive ? 1 : 0,
             g_bLeftSafeArea ? 1 : 0, canDecay ? 1 : 0);
 
-    if (!g_bEventActive) { g_bBossBlockActive = false; return Plugin_Stop; }
+    if (!g_bEventActive) { g_bBossBlockActive = false; EvaluateFinaleSkip(); return Plugin_Stop; }
 
     if (g_fBossIntensity >= gC_BossThreshold.FloatValue)
     {
@@ -613,6 +654,7 @@ public Action Timer_BossRebreatherEnd(Handle timer)
     g_bBossBlockActive = false;
     if (gC_DebugRebreather.BoolValue) LogToFileEx(g_sLogPath, "[BOSSDBG] TIMER RELEASE (intensity below threshold)");
     EvaluateBossBlocking();
+    EvaluateFinaleSkip();
     return Plugin_Stop;
 }
 
@@ -644,6 +686,7 @@ void CheckBossFlowUnblock()
             g_bBossBlockActive = false;
             if (gC_DebugRebreather.BoolValue) LogToFileEx(g_sLogPath, "[BOSSDBG] FLOWCHECK RELEASE (intensity below threshold)");
             EvaluateBossBlocking();
+            EvaluateFinaleSkip();
         }
         else
         {
@@ -694,11 +737,15 @@ void EvaluateFatigueBlocking()
 {
     if (!gC_FatigueEnable.BoolValue || !gC_Enable.BoolValue || !g_bModeAllowed) return;
     if (g_bFatigueBlockActive) return;
+    if (g_bFinaleActive && !gC_CoverFinales.BoolValue) return;
+    if (g_bFinaleActive && gC_NoFatigueFinale.BoolValue) return;
     if (g_fFatigue >= gC_FatigueThreshold.FloatValue) StartFatigueBlock();
 }
 void StartFatigueBlock()
 {
     if (!gC_FatigueEnable.BoolValue || g_bFatigueBlockActive || !g_bModeAllowed) return;
+    if (g_bFinaleActive && !gC_CoverFinales.BoolValue) return;
+    if (g_bFinaleActive && gC_NoFatigueFinale.BoolValue) return;
     if (g_hFatigueRebreather != null) { KillTimer(g_hFatigueRebreather); g_hFatigueRebreather = null; }
     g_bFatigueBlockActive = true;
     g_fFatigueBlockStartFlow = g_bFatigueBlockCarryover ? 0.0 : GetFarthestFlowDistance();
@@ -711,12 +758,15 @@ void StartFatigueBlock()
     if (gC_FatigueChat.BoolValue) { char msg[128]; Format(msg, sizeof(msg), "\x04[DI] Fatigue block %.1fs", rebr); PrintToRootAdmins(msg); }
     DebugLog("Fatigue block started: %.1f s, flow %.0f", rebr, g_fFatigueBlockStartFlow);
     g_hFatigueRebreather = CreateTimer(rebr, Timer_FatigueRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+    EvaluateFinaleSkip();
 }
 public Action Timer_FatigueRebreatherEnd(Handle timer)
 {
     g_hFatigueRebreather = null;
     if (g_fFatigue >= gC_FatigueThreshold.FloatValue) { g_hFatigueRebreather = CreateTimer(gC_FatigueRebreather.FloatValue, Timer_FatigueRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE); return Plugin_Stop; }
-    g_bFatigueBlockActive = false; EvaluateFatigueBlocking(); return Plugin_Stop;
+    g_bFatigueBlockActive = false; EvaluateFatigueBlocking();
+    EvaluateFinaleSkip();
+    return Plugin_Stop;
 }
 void CheckFatigueFlowUnblock()
 {
@@ -725,7 +775,7 @@ void CheckFatigueFlowUnblock()
     if (curFlow - g_fFatigueBlockStartFlow >= g_fFatigueFlowUnblockCurrent)
     {
         if (g_hFatigueRebreather != null) { KillTimer(g_hFatigueRebreather); g_hFatigueRebreather = null; }
-        if (g_fFatigue < gC_FatigueThreshold.FloatValue) { g_bFatigueBlockActive = false; EvaluateFatigueBlocking(); }
+        if (g_fFatigue < gC_FatigueThreshold.FloatValue) { g_bFatigueBlockActive = false; EvaluateFatigueBlocking(); EvaluateFinaleSkip(); }
         else { g_fFatigueBlockStartFlow = curFlow; g_hFatigueRebreather = CreateTimer(gC_FatigueRebreather.FloatValue, Timer_FatigueRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE); }
     }
 }
@@ -747,6 +797,63 @@ void ApplyFatigueDecay()
     EvaluateFatigueBlocking();
 }
 
+void EvaluateFinaleSkip()
+{
+    if (!g_bFinaleActive || !gC_CoverFinales.BoolValue)
+        return;
+
+    bool shouldSkip = (g_bFatigueBlockActive) || (g_bHordeBlockActive && g_bBossBlockActive);
+
+    if (shouldSkip)
+    {
+        if (g_hSkipTimer == null)
+        {
+            float delay = gC_SkipDelay.FloatValue;
+            if (delay <= 0.0)
+                ForceFinaleEnd();
+            else
+                g_hSkipTimer = CreateTimer(delay, Timer_FinaleSkip, _, TIMER_FLAG_NO_MAPCHANGE);
+        }
+    }
+    else
+    {
+        if (g_hSkipTimer != null)
+        {
+            KillTimer(g_hSkipTimer);
+            g_hSkipTimer = null;
+        }
+    }
+}
+
+void ForceFinaleEnd()
+{
+    if (!g_bFinaleActive || gC_CoverFinales.BoolValue <= 0.0)
+        return;
+
+    L4D2_ChangeFinaleStage(17, "");
+    L4D2_SendInRescueVehicle();
+
+    int director = FindEntityByClassname(-1, "terror_director");
+    if (director == -1) director = FindEntityByClassname(-1, "info_director");
+    if (director != -1)
+        AcceptEntityInput(director, "ForceFinaleEnd");
+
+    g_bFinaleActive = false;
+}
+
+public Action Timer_FinaleSkip(Handle timer)
+{
+    g_hSkipTimer = null;
+    if (!g_bFinaleActive || gC_CoverFinales.BoolValue <= 0.0)
+        return Plugin_Stop;
+
+    bool shouldSkip = (g_bFatigueBlockActive) || (g_bHordeBlockActive && g_bBossBlockActive);
+    if (shouldSkip)
+        ForceFinaleEnd();
+
+    return Plugin_Stop;
+}
+
 public void Event_PlayerNowIt(Event event, const char[] name, bool dontBroadcast)
 {
     int victim = GetClientOfUserId(event.GetInt("userid"));
@@ -762,6 +869,7 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
     if (damage <= 0.0 || victim < 1 || victim > MaxClients || !IsClientInGame(victim)) return Plugin_Continue;
     if (GetClientTeam(victim) != 2) return Plugin_Continue;
     if (GetEntProp(victim, Prop_Send, "m_isIncapacitated")) return Plugin_Continue;
+    if (!IsPlayerAlive(victim)) return Plugin_Continue;
 
     bool friendly = (attacker > 0 && attacker <= MaxClients && IsClientInGame(attacker) && GetClientTeam(attacker) == 2 && attacker != victim);
     if (friendly) return Plugin_Continue;
@@ -1072,6 +1180,8 @@ public void Event_ClearState(Event event, const char[] name, bool dontBroadcast)
     g_bSpecialBlockActive = false;
     g_bBossBlockActive = false;
     g_bFatigueBlockActive = false;
+    g_bFinaleActive = false;
+    if (g_hSkipTimer != null) { KillTimer(g_hSkipTimer); g_hSkipTimer = null; }
 }
 
 public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
@@ -1081,6 +1191,8 @@ public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
     g_bEventActive = true;
     g_bLeftSafeArea = false;
     g_fSafeAreaLeaveTime = 0.0;
+    g_bFinaleActive = false;
+    if (g_hSkipTimer != null) { KillTimer(g_hSkipTimer); g_hSkipTimer = null; }
 
     if (L4D_HasAnySurvivorLeftSafeArea())
     {
@@ -1097,12 +1209,52 @@ public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
 public void Event_FinaleStart(Event event, const char[] name, bool dontBroadcast)
 {
     if (!gC_Enable.BoolValue || !g_bModeAllowed) return;
+
+    g_bFinaleActive = true;
+
+    if (!gC_CoverFinales.BoolValue)
+    {
+        KillAllTimers();
+        g_bHordeBlockActive = false;
+        g_bSpecialBlockActive = false;
+        g_bBossBlockActive = false;
+        g_bFatigueBlockActive = false;
+    }
+    else
+    {
+        if (gC_NoFatigueFinale.BoolValue && gC_FatigueEnable.BoolValue && g_bFatigueBlockActive)
+        {
+            if (g_hFatigueRebreather != null)
+            {
+                KillTimer(g_hFatigueRebreather);
+                g_hFatigueRebreather = null;
+            }
+            g_bFatigueBlockActive = false;
+            EvaluateFinaleSkip();
+        }
+
+        bool shouldSkip = (g_bFatigueBlockActive) || (g_bHordeBlockActive && g_bBossBlockActive);
+        if (shouldSkip)
+        {
+            float delay = gC_SkipDelay.FloatValue;
+            if (delay <= 0.0)
+                ForceFinaleEnd();
+            else
+            {
+                if (g_hSkipTimer != null) KillTimer(g_hSkipTimer);
+                g_hSkipTimer = CreateTimer(delay, Timer_FinaleSkip, _, TIMER_FLAG_NO_MAPCHANGE);
+            }
+        }
+    }
+
     ApplyDisasterFatigueBump();
+    EvaluateFinaleSkip();
 }
 
 public Action L4D_OnSpawnMob(int &amount)
 {
     if (!gC_Enable.BoolValue || !g_bModeAllowed) return Plugin_Continue;
+    if (g_bFinaleActive && !gC_CoverFinales.BoolValue) return Plugin_Continue;
     if (g_bHordeBlockActive || g_bFatigueBlockActive) { DebugLog("Mob BLOCKED"); return Plugin_Handled; }
     return Plugin_Continue;
 }
@@ -1110,6 +1262,7 @@ public Action L4D_OnSpawnMob(int &amount)
 public Action L4D_OnSpawnSpecial(int &zombieClass, const float vecOrigin[3], const float vecAngles[3])
 {
     if (!gC_Enable.BoolValue || !g_bModeAllowed) return Plugin_Continue;
+    if (g_bFinaleActive && !gC_CoverFinales.BoolValue) return Plugin_Continue;
     if (g_bSpecialBlockActive || g_bFatigueBlockActive) { DebugLog("Special BLOCKED"); return Plugin_Handled; }
     return Plugin_Continue;
 }
@@ -1117,6 +1270,7 @@ public Action L4D_OnSpawnSpecial(int &zombieClass, const float vecOrigin[3], con
 public void OnEntityCreated(int entity, const char[] classname)
 {
     if (!gC_Enable.BoolValue || !g_bModeAllowed) return;
+    if (g_bFinaleActive && !gC_CoverFinales.BoolValue) return;
 
     if ((g_bBossBlockActive || g_bFatigueBlockActive) && (StrEqual(classname, "tank") || StrEqual(classname, "witch")))
     {
@@ -1128,6 +1282,7 @@ public void OnEntityCreated(int entity, const char[] classname)
 public Action L4D_OnSpawnTank(const float vecOrigin[3], const float vecAngles[3])
 {
     if (!gC_Enable.BoolValue || !g_bModeAllowed) return Plugin_Continue;
+    if (g_bFinaleActive && !gC_CoverFinales.BoolValue) return Plugin_Continue;
     if (g_bBossBlockActive || g_bFatigueBlockActive) { DebugLog("Tank BLOCKED"); return Plugin_Handled; }
     return Plugin_Continue;
 }
@@ -1135,6 +1290,7 @@ public Action L4D_OnSpawnTank(const float vecOrigin[3], const float vecAngles[3]
 public Action L4D_OnSpawnWitch(const float vecOrigin[3], const float vecAngles[3])
 {
     if (!gC_Enable.BoolValue || !g_bModeAllowed) return Plugin_Continue;
+    if (g_bFinaleActive && !gC_CoverFinales.BoolValue) return Plugin_Continue;
     if (g_bBossBlockActive || g_bFatigueBlockActive) { DebugLog("Witch BLOCKED"); return Plugin_Handled; }
     return Plugin_Continue;
 }
