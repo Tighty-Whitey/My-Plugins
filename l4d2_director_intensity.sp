@@ -50,7 +50,7 @@ public Plugin myinfo = {
     name = "L4D2 Director Intensity 2.0",
     author = "Tighty-Whitey",
     description = "Adaptive director intensity and disaster fatigue.",
-    version = "1.4",
+    version = "1.3",
     url = ""
 };
 
@@ -818,10 +818,31 @@ void ApplyFatigueDecay()
     EvaluateFatigueBlocking();
 }
 
+bool IsScavengeFinaleActive()
+{
+    int entity = -1;
+    while ((entity = FindEntityByClassname(entity, "point_prop_use_target")) != -1)
+    {
+        if (GetEntProp(entity, Prop_Data, "m_bEnabled"))
+            return true;
+    }
+    return false;
+}
+
 void EvaluateFinaleSkip()
 {
     if (!g_bFinaleActive || !gC_CoverFinales.BoolValue)
         return;
+
+    if (IsScavengeFinaleActive())
+    {
+        if (g_hSkipTimer != null)
+        {
+            KillTimer(g_hSkipTimer);
+            g_hSkipTimer = null;
+        }
+        return;
+    }
 
     bool shouldSkip = (g_bFatigueBlockActive) || (g_bHordeBlockActive && g_bBossBlockActive);
 
@@ -849,6 +870,9 @@ void EvaluateFinaleSkip()
 void ForceFinaleEnd()
 {
     if (!g_bFinaleActive || !gC_CoverFinales.BoolValue)
+        return;
+
+    if (IsScavengeFinaleActive())
         return;
 
     L4D2_ChangeFinaleStage(17, "");
