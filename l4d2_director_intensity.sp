@@ -50,7 +50,7 @@ public Plugin myinfo = {
     name = "L4D2 Director Intensity 2.0",
     author = "Tighty-Whitey",
     description = "Adaptive director intensity and disaster fatigue.",
-    version = "1.3",
+    version = "1.4",
     url = ""
 };
 
@@ -218,6 +218,8 @@ public void OnPluginStart()
     HookEvent("round_start",            Event_RoundStart, EventHookMode_PostNoCopy);
     HookEvent("player_left_safe_area",  Event_PlayerLeftSafeArea, EventHookMode_PostNoCopy);
 
+    AddNormalSoundHook(OnNormalSound);
+
     RegAdminCmd("sm_detectintensity", Cmd_DetectIntensity, ADMFLAG_ROOT, "Show all intensities");
 
     g_hMPGameMode = FindConVar("mp_gamemode");
@@ -229,6 +231,25 @@ public void OnPluginStart()
     for (int i = 1; i <= MaxClients; i++)
         if (IsClientInGame(i))
             SDKHook(i, SDKHook_OnTakeDamage, OnTakeDamage);
+}
+
+public Action OnNormalSound(int clients[MAXPLAYERS], int &numClients, char sample[PLATFORM_MAX_PATH],
+    int &entity, int &channel, float &volume, int &level, int &pitch, int &flags,
+    char soundEntry[PLATFORM_MAX_PATH], int &seed)
+{
+    if (!gC_Enable.BoolValue || !g_bModeAllowed)
+        return Plugin_Continue;
+
+    if (g_bHordeBlockActive || g_bFatigueBlockActive)
+    {
+        if (StrContains(soundEntry, "MegaMobIncoming", false) != -1)
+            return Plugin_Stop;
+
+        if (StrContains(sample, "mega_mob_incoming", false) != -1)
+            return Plugin_Stop;
+    }
+
+    return Plugin_Continue;
 }
 
 public void OnClientPutInServer(int client)
@@ -827,7 +848,7 @@ void EvaluateFinaleSkip()
 
 void ForceFinaleEnd()
 {
-    if (!g_bFinaleActive || gC_CoverFinales.BoolValue <= 0.0)
+    if (!g_bFinaleActive || !gC_CoverFinales.BoolValue)
         return;
 
     L4D2_ChangeFinaleStage(17, "");
@@ -844,7 +865,7 @@ void ForceFinaleEnd()
 public Action Timer_FinaleSkip(Handle timer)
 {
     g_hSkipTimer = null;
-    if (!g_bFinaleActive || gC_CoverFinales.BoolValue <= 0.0)
+    if (!g_bFinaleActive || !gC_CoverFinales.BoolValue)
         return Plugin_Stop;
 
     bool shouldSkip = (g_bFatigueBlockActive) || (g_bHordeBlockActive && g_bBossBlockActive);
