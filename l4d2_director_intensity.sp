@@ -875,14 +875,7 @@ void ForceFinaleEnd()
     if (IsScavengeFinaleActive())
         return;
 
-    L4D2_ChangeFinaleStage(17, "");
-    L4D2_SendInRescueVehicle();
-
-    int director = FindEntityByClassname(-1, "terror_director");
-    if (director == -1) director = FindEntityByClassname(-1, "info_director");
-    if (director != -1)
-        AcceptEntityInput(director, "ForceFinaleEnd");
-
+    L4D2_SendInRescueVehicle();   // triggers escape for holdout finales
     g_bFinaleActive = false;
 }
 
