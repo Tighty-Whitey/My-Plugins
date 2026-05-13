@@ -820,13 +820,8 @@ void ApplyFatigueDecay()
 
 bool IsScavengeFinaleActive()
 {
-    int entity = -1;
-    while ((entity = FindEntityByClassname(entity, "point_prop_use_target")) != -1)
-    {
-        if (GetEntProp(entity, Prop_Data, "m_bEnabled"))
-            return true;
-    }
-    return false;
+    int entity = FindEntityByClassname(-1, "point_prop_use_target");
+    return (entity != -1);
 }
 
 void EvaluateFinaleSkip()
