@@ -198,7 +198,7 @@ public void OnPluginStart()
     gC_FatigueDamageDivider  = CreateConVar("director_intensity_disaster_fatigue_damage_divider",   "2000.0","Fallback Fatigue damage divider (used if specific Tank/Witch divider is 0)", FCVAR_NOTIFY, true, 1.0);
     gC_FatigueTankDivider    = CreateConVar("director_intensity_fatigue_tank_damage_divider",       "4000.0","Tank damage divided by this to increase Fatigue (0 = use fallback)", FCVAR_NOTIFY, true, 0.0);
     gC_FatigueWitchDivider   = CreateConVar("director_intensity_fatigue_witch_damage_divider",      "2000.0","Witch damage divided by this to increase Fatigue (0 = use fallback)", FCVAR_NOTIFY, true, 0.0);
-    gC_FatigueRebreather     = CreateConVar("director_intensity_disaster_fatigue_rebreather",       "120.0","Fatigue block duration", FCVAR_NOTIFY, true, 0.0);
+    gC_FatigueRebreather     = CreateConVar("director_intensity_disaster_fatigue_rebreather",       "900.0","Fatigue block duration", FCVAR_NOTIFY, true, 0.0);
     gC_FatigueDecayEnable    = CreateConVar("director_intensity_disaster_fatigue_decay_enable",     "1",    "Enable fatigue decay", FCVAR_NOTIFY, true, 0.0, true, 1.0);
     gC_FatigueDecayInterval  = CreateConVar("director_intensity_disaster_fatigue_decay_interval",   "90.0", "Seconds to lose 0.1 fatigue", FCVAR_NOTIFY, true, 0.1);
     gC_FatigueDecayDelay     = CreateConVar("director_intensity_disaster_fatigue_decay_delay",      "60.0", "Seconds without damage before fatigue decay starts", FCVAR_NOTIFY, true, 0.0);
