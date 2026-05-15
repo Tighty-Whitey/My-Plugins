@@ -218,7 +218,7 @@ public void OnPluginStart()
     gC_SkipDelay    = CreateConVar("director_intensity_finale_skip_delay", "3.0", "Delay (seconds) before auto-skipping a blocked finale (0 = instant)", FCVAR_NOTIFY, true, 0.0);
 
     // Fatigue no block in finales
-    gC_NoFatigueFinale = CreateConVar("director_intensity_fatigue_no_finale_block", "0", "Prevent fatigue block during finales (1 = yes)", FCVAR_NOTIFY, true, 0.0, true, 1.0);
+    gC_NoFatigueFinale = CreateConVar("director_intensity_fatigue_no_finale_block", "1", "Prevent fatigue block during finales (1 = yes)", FCVAR_NOTIFY, true, 0.0, true, 1.0);
 
     // Rebreather debug logging (off by default)
     gC_DebugRebreather = CreateConVar("director_intensity_debug_rebreather", "0", "Log rebreather debug events to file (0/1)", FCVAR_NONE);
