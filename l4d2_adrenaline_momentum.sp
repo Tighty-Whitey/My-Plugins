@@ -6,7 +6,7 @@
 #include <sdktools>
 #define CVARFLAGS FCVAR_NOTIFY
 
-#define PLUGIN_VERSION "1.1"
+#define PLUGIN_VERSION "1.0"
 
 #if !defined DMG_CLUB
 #define DMG_CLUB (1 << 7)
@@ -68,7 +68,7 @@ public Plugin myinfo =
 	name        = "[L4D2] Adrenaline Momentum",
 	author      = "Tighty-Whitey",
 	description = "Adrenaline melee staggers infected and grants brief protection; optional momentum extends adrenaline while player keeps dealing damage.",
-	version     = "1.1",
+	version     = "1.0",
 	url         = ""
 };
 
