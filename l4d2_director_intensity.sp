@@ -50,7 +50,7 @@ public Plugin myinfo = {
     name = "L4D2 Director Intensity 2.0",
     author = "Tighty-Whitey",
     description = "Adaptive director intensity and disaster fatigue.",
-    version = "1.5",
+    version = "1.6",
     url = ""
 };
 
@@ -114,6 +114,9 @@ float g_fBoomerVomitUntil[MAXPLAYERS+1];
 // Finale state
 bool  g_bFinaleActive = false;
 Handle g_hSkipTimer = null;
+
+// Gauntlet finale detection
+bool g_bGauntletMap = false;
 
 Handle g_hHUDTimer = null;
 char g_sLogPath[PLATFORM_MAX_PATH];
@@ -235,6 +238,7 @@ public void OnPluginStart()
     HookEvent("map_transition",         Event_ClearState, EventHookMode_PostNoCopy);
     HookEvent("finale_vehicle_leaving", Event_ClearState, EventHookMode_PostNoCopy);
     HookEvent("finale_start",           Event_FinaleStart, EventHookMode_PostNoCopy);
+    HookEvent("gauntlet_finale_start",  Event_GauntletFinaleStart, EventHookMode_PostNoCopy);
     HookEvent("player_now_it",          Event_PlayerNowIt, EventHookMode_Post);
     HookEvent("round_start",            Event_RoundStart, EventHookMode_PostNoCopy);
     HookEvent("player_left_safe_area",  Event_PlayerLeftSafeArea, EventHookMode_PostNoCopy);
@@ -368,6 +372,8 @@ public void OnMapStart()
         g_bFatigueBlockCarryover = false;
         g_fFatigueRemainingFlow = 0.0;
     }
+
+    g_bGauntletMap = IsGauntletFinaleActive();
 }
 
 public void OnMapEnd()
@@ -896,6 +902,20 @@ bool IsScavengeFinaleActive()
     return (entity != -1);
 }
 
+bool IsGauntletFinaleActive()
+{
+    int entity = -1;
+    while ((entity = FindEntityByClassname(entity, "trigger_finale")) != -1)
+    {
+        if (HasEntProp(entity, Prop_Data, "m_type"))
+        {
+            if (GetEntProp(entity, Prop_Data, "m_type") == 0)
+                return true;
+        }
+    }
+    return false;
+}
+
 bool IsOfficialFinaleMap()
 {
     char map[64];
@@ -991,7 +1011,7 @@ void EvaluateFinaleSkip()
         return;
     }
 
-    if (IsScavengeFinaleActive())
+    if (IsScavengeFinaleActive() || g_bGauntletMap)
     {
         if (g_hSkipTimer != null)
         {
@@ -1032,7 +1052,7 @@ void ForceFinaleEnd()
     if (!IsOfficialFinaleMap())
         return;
 
-    if (IsScavengeFinaleActive())
+    if (IsScavengeFinaleActive() || g_bGauntletMap)
         return;
 
     L4D2_SendInRescueVehicle();
@@ -1050,6 +1070,42 @@ public Action Timer_FinaleSkip(Handle timer)
         ForceFinaleEnd();
 
     return Plugin_Stop;
+}
+
+public void Event_GauntletFinaleStart(Event event, const char[] name, bool dontBroadcast)
+{
+    if (!gC_Enable.BoolValue || !g_bModeAllowed) return;
+
+    g_bGauntletMap = true;
+
+    if (!g_bFinaleActive)
+    {
+        g_bFinaleActive = true;
+
+        if (!gC_CoverFinales.BoolValue)
+        {
+            KillAllTimers();
+            g_bHordeBlockActive = false;
+            g_bSpecialBlockActive = false;
+            g_bBossBlockActive = false;
+            g_bFatigueBlockActive = false;
+        }
+        else
+        {
+            if (gC_NoFatigueFinale.BoolValue && gC_FatigueEnable.BoolValue && g_bFatigueBlockActive)
+            {
+                if (g_hFatigueRebreather != null)
+                {
+                    KillTimer(g_hFatigueRebreather);
+                    g_hFatigueRebreather = null;
+                }
+                g_bFatigueBlockActive = false;
+            }
+        }
+
+        ApplyDisasterFatigueBump();
+        EvaluateFinaleSkip();
+    }
 }
 
 public void Event_PlayerNowIt(Event event, const char[] name, bool dontBroadcast)
