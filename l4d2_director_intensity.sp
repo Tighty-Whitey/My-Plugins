@@ -43,6 +43,9 @@ ConVar gC_SkipDelay;
 // Fatigue no block in finales
 ConVar gC_NoFatigueFinale;
 
+// Tank-allow maps (never block Tanks)
+ConVar gC_TankAllowMaps;
+
 ConVar g_hMPGameMode;
 bool  g_bModeAllowed = true;
 
@@ -50,7 +53,7 @@ public Plugin myinfo = {
     name = "L4D2 Director Intensity 2.0",
     author = "Tighty-Whitey",
     description = "Adaptive director intensity and disaster fatigue.",
-    version = "1.6",
+    version = "1.7",
     url = ""
 };
 
@@ -117,6 +120,10 @@ Handle g_hSkipTimer = null;
 
 // Gauntlet finale detection
 bool g_bGauntletMap = false;
+
+// Tank-allow maps
+char g_sTankAllowMaps[64][64];
+int  g_iTankAllowCount = 0;
 
 Handle g_hHUDTimer = null;
 char g_sLogPath[PLATFORM_MAX_PATH];
@@ -223,6 +230,9 @@ public void OnPluginStart()
     // Fatigue no block in finales
     gC_NoFatigueFinale = CreateConVar("director_intensity_fatigue_no_finale_block", "1", "Prevent fatigue block during finales (1 = yes)", FCVAR_NOTIFY, true, 0.0, true, 1.0);
 
+    // Tank-allow maps (never block Tanks)
+    gC_TankAllowMaps = CreateConVar("director_intensity_tank_allow_maps", "c7m1_docks", "CSV of map names where Tanks are never blocked (for scripted tanks)", FCVAR_NOTIFY);
+
     // Rebreather debug logging (off by default)
     gC_DebugRebreather = CreateConVar("director_intensity_debug_rebreather", "0", "Log rebreather debug events to file (0/1)", FCVAR_NONE);
 
@@ -251,11 +261,50 @@ public void OnPluginStart()
     if (g_hMPGameMode != null)
         g_hMPGameMode.AddChangeHook(Cvar_ModeChanged);
     gC_Modes.AddChangeHook(Cvar_ModeChanged);
+    gC_TankAllowMaps.AddChangeHook(Cvar_TankAllowMapsChanged);
     UpdateAllowedGameMode();
+    ParseTankAllowMaps();
 
     for (int i = 1; i <= MaxClients; i++)
         if (IsClientInGame(i))
             SDKHook(i, SDKHook_OnTakeDamage, OnTakeDamage);
+}
+
+void ParseTankAllowMaps()
+{
+    g_iTankAllowCount = 0;
+    char list[512];
+    gC_TankAllowMaps.GetString(list, sizeof(list));
+    TrimString(list);
+    if (!list[0]) return;
+
+    char parts[64][64];
+    int count = ExplodeString(list, ",", parts, 64, 64, true);
+    for (int i = 0; i < count && g_iTankAllowCount < 64; i++)
+    {
+        TrimString(parts[i]);
+        if (!parts[i][0]) continue;
+        for (int k = 0; parts[i][k]; k++) parts[i][k] = CharToLower(parts[i][k]);
+        strcopy(g_sTankAllowMaps[g_iTankAllowCount], 64, parts[i]);
+        g_iTankAllowCount++;
+    }
+}
+
+bool IsMapTankAllowed()
+{
+    char map[64];
+    GetCurrentMap(map, sizeof(map));
+    for (int k = 0; map[k]; k++) map[k] = CharToLower(map[k]);
+
+    for (int i = 0; i < g_iTankAllowCount; i++)
+        if (StrEqual(map, g_sTankAllowMaps[i], false))
+            return true;
+    return false;
+}
+
+public void Cvar_TankAllowMapsChanged(ConVar convar, const char[] oldValue, const char[] newValue)
+{
+    ParseTankAllowMaps();
 }
 
 public Action OnNormalSound(int clients[MAXPLAYERS], int &numClients, char sample[PLATFORM_MAX_PATH],
@@ -1128,6 +1177,10 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
     bool friendly = (attacker > 0 && attacker <= MaxClients && IsClientInGame(attacker) && GetClientTeam(attacker) == 2 && attacker != victim);
     if (friendly) return Plugin_Continue;
 
+    // Skip self‑damage entirely
+    if (attacker == victim)
+        return Plugin_Continue;
+
     bool isCommon = false;
     int zombieClass = 0;
 
@@ -1196,6 +1249,10 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
 
     if (gC_FatigueEnable.BoolValue)
     {
+        // Only increase fatigue from actual enemy damage
+        if (!isCommon && zombieClass == 0)
+            return Plugin_Continue;
+
         float fdiv = gC_FatigueDamageDivider.FloatValue;
         if (zombieClass == 8)
         {
@@ -1528,6 +1585,9 @@ public void OnEntityCreated(int entity, const char[] classname)
 
     if ((g_bBossBlockActive || g_bFatigueBlockActive) && (StrEqual(classname, "tank") || StrEqual(classname, "witch")))
     {
+        if (StrEqual(classname, "tank") && IsMapTankAllowed())
+            return;
+
         if (g_bFinaleActive && !IsOfficialFinaleMap())
         {
             SDKHook(entity, SDKHook_SpawnPost, OnBossSpawnPost);
@@ -1543,6 +1603,8 @@ public Action L4D_OnSpawnTank(const float vecOrigin[3], const float vecAngles[3]
     if (g_bFinaleActive && !gC_CoverFinales.BoolValue) return Plugin_Continue;
     if (g_bBossBlockActive || g_bFatigueBlockActive)
     {
+        if (IsMapTankAllowed())
+            return Plugin_Continue;
         if (g_bFinaleActive && !IsOfficialFinaleMap())
             return Plugin_Continue;
         return Plugin_Handled;
