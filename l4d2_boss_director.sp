@@ -1460,7 +1460,7 @@ static bool TryExecuteWitchPlan(int idx)
             SetConVarInt(cvWander, 1);
             SetConVarFlags(cvWander, flagsSaved);
             // Only restore on non-CSV maps
-            forceRestorePrev = !persistentWander;
+            forceRestorePrev = !persistentWander && (phase != PHASE_4 && phase != PHASE_6);
         }
 
         if (gC_WitchLog.BoolValue)
