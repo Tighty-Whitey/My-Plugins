@@ -566,51 +566,36 @@ static void UpdateFinaleState()
 // Score init
 static void InitOrPersistScoreForCampaign()
 {
-    char mapname[64];
-    GetCurrentMap(mapname, sizeof mapname);
-    char campaign[32] = "";
-    int len = strlen(mapname);
-    for (int i = 0; i < len; i++)
-    {
-        if (mapname[i] == 'm' && i + 1 < len && IsDigit(mapname[i + 1]))
-        {
-            int copyLen = (i < (sizeof campaign - 1)) ? i : (sizeof campaign - 1);
-            for (int j = 0; j < copyLen; j++) campaign[j] = mapname[j];
-            campaign[copyLen] = '\0';
-            break;
-        }
-    }
-    if (!campaign[0]) strcopy(campaign, sizeof campaign, mapname);
     bool firstLoad = (g_LastCampaign[0] == '\0');
-    bool changed = !firstLoad && !StrEqual(campaign, g_LastCampaign);
-    bool doReset = firstLoad || (changed && gC_ResetScoreOnCampaign.BoolValue);
+    bool doReset = firstLoad || (gC_ResetScoreOnCampaign.BoolValue && L4D_IsFirstMapInScenario());
 
-// Drop P5 lock on first load/campaign change only if enabled
-if ((firstLoad || changed) && gC_P5UnlockOnCampaign.BoolValue)
-{
-    g_Phase5Lock = false;
-    g_LastPhase = PHASE_1;
-    g_LockBaselineScore = 0.0;
-}
-if (doReset)
-{
-    char diff[32];
-    FindConVar("z_difficulty").GetString(diff, sizeof diff);
-    float startScore = gC_StartExp.FloatValue;
-    if (StrEqual(diff, "Easy", false)) startScore = gC_StartEasy.FloatValue;
-    else if (StrEqual(diff, "Normal", false)) startScore = gC_StartNorm.FloatValue;
-    else if (StrEqual(diff, "Advanced", false)) startScore = gC_StartAdv.FloatValue;
-    else if (StrEqual(diff, "Expert", false) || StrEqual(diff, "Impossible", false)) startScore = gC_StartExp.FloatValue;
-    g_Score = startScore;
-}
-strcopy(g_LastCampaign, sizeof g_LastCampaign, campaign);
-float floorS = gC_ScoreMin.FloatValue;
-if (g_Score < floorS) g_Score = floorS;
-g_TokensAwarded = RoundToFloor(g_Score / 100.0);
-if (g_TokensAwarded < 0) g_TokensAwarded = 0;
-g_TokensConsumed = 0;
-}
+    if ((firstLoad || L4D_IsFirstMapInScenario()) && gC_P5UnlockOnCampaign.BoolValue)
+    {
+        g_Phase5Lock = false;
+        g_LastPhase = PHASE_1;
+        g_LockBaselineScore = 0.0;
+    }
 
+    if (doReset)
+    {
+        char diff[32];
+        FindConVar("z_difficulty").GetString(diff, sizeof diff);
+        float startScore = gC_StartExp.FloatValue;
+        if (StrEqual(diff, "Easy", false)) startScore = gC_StartEasy.FloatValue;
+        else if (StrEqual(diff, "Normal", false)) startScore = gC_StartNorm.FloatValue;
+        else if (StrEqual(diff, "Advanced", false)) startScore = gC_StartAdv.FloatValue;
+        else if (StrEqual(diff, "Expert", false) || StrEqual(diff, "Impossible", false)) startScore = gC_StartExp.FloatValue;
+        g_Score = startScore;
+    }
+
+    strcopy(g_LastCampaign, sizeof g_LastCampaign, "l4d2_campaign");
+
+    float floorS = gC_ScoreMin.FloatValue;
+    if (g_Score < floorS) g_Score = floorS;
+    g_TokensAwarded = RoundToFloor(g_Score / 100.0);
+    if (g_TokensAwarded < 0) g_TokensAwarded = 0;
+    g_TokensConsumed = 0;
+}
 
 // Helper function
 static void ResetCycleToPhase1()
