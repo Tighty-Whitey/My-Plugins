@@ -45,7 +45,7 @@ public Plugin myinfo =
     name = "[L4D2] Boss Director",
     author = "Tighty-Whitey",
     description = "Adaptive boss director.",
-    version = "1.2",
+    version = "1.4",
     url = ""
 };
 
@@ -2025,7 +2025,7 @@ if (g_Phase5Lock)
     else
         Format(lockStatus, sizeof lockStatus, "");
 
-    Format(msg, sizeof msg, "BossDirector v1.2\nScore: %.1f | Tanks %d/%d | Tokens rem %d used %d%s",
+    Format(msg, sizeof msg, "BossDirector v1.4\nScore: %.1f | Tanks %d/%d | Tokens rem %d used %d%s",
         g_Score, aliveTanks, cap, remTokens, g_TokensConsumed, lockStatus);
 }
 
