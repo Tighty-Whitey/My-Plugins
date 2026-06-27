@@ -1,5 +1,5 @@
 // File: l4d2_horde_director.sp
-// Version: 1.1
+// Version: 1.2
 
 #pragma newdecls required
 #pragma semicolon 1
@@ -27,7 +27,7 @@ public Plugin myinfo =
     name        = "[L4D2] Horde Director",
     author      = "Tighty-Whitey",
     description = "Horde director with timed triggers, flow-aware resume, trigger caps, and pace engine.",
-    version     = "1.1",
+    version     = "1.2",
     url         = ""
 };
 
@@ -708,43 +708,18 @@ public void OnPluginEnd()
 
 bool IsL4D1Campaign()
 {
-	if (GetFeatureStatus(FeatureType_Native, "L4D2_ExecVScriptCode") == FeatureStatus_Available && g_hVSBuf != null)
-	{
-		L4D2_ExecVScriptCode(
-		"try{" ...
-		"local s=-1;" ...
-		"if (\"SessionOptions\" in getroottable() && ::SessionOptions!=null) {" ...
-		" if (\"SurvivorSet\" in ::SessionOptions) s = ::SessionOptions.SurvivorSet;" ...
-		" else if (\"DefaultSurvivorSet\" in ::SessionOptions) s = ::SessionOptions.DefaultSurvivorSet;" ...
-		"}" ...
-		"Convars.SetValue(\"l4d2_vscript_return\",\"\"+s);" ...
-		"}catch(e){Convars.SetValue(\"l4d2_vscript_return\",\"-1\");}"
-		);
-		char buf[32];
-		g_hVSBuf.GetString(buf, sizeof(buf));
-		int set = StringToInt(buf);
-		if (set == 1) return true;
-		if (set == 2) return false;
-	}
+    char map[64];
+    GetCurrentMap(map, sizeof(map));
+    
+    if (strncmp(map, "c8m", 3, false) == 0) return true;
+    if (strncmp(map, "c9m", 3, false) == 0) return true;
+    if (strncmp(map, "c10m", 4, false) == 0) return true;
+    if (strncmp(map, "c11m", 4, false) == 0) return true;
+    if (strncmp(map, "c12m", 4, false) == 0) return true;
+    if (strncmp(map, "c13m", 4, false) == 0) return true;
+    if (strncmp(map, "c14m", 4, false) == 0) return true;
 
-	char map[64];
-	GetCurrentMap(map, sizeof(map));
-	if (strncmp(map, "c8m", 3, false) == 0) return true;
-	if (strncmp(map, "c9m", 3, false) == 0) return true;
-	if (strncmp(map, "c10m", 4, false) == 0) return true;
-	if (strncmp(map, "c11m", 4, false) == 0) return true;
-	if (strncmp(map, "c12m", 4, false) == 0) return true;
-	if (strncmp(map, "c13m", 4, false) == 0) return true;
-	if (strncmp(map, "c14m", 4, false) == 0) return true;
-
-	if (StrContains(map, "l4d_", false) == 0) return true;
-	if (StrContains(map, "hospital", false) != -1) return true;
-	if (StrContains(map, "airport", false) != -1) return true;
-	if (StrContains(map, "farm", false) != -1) return true;
-	if (StrContains(map, "smalltown", false) != -1) return true;
-	if (StrContains(map, "lighthouse", false) != -1) return true;
-
-	return false;
+    return false;
 }
 
 // Round lifecycle
