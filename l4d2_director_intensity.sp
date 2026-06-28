@@ -53,7 +53,7 @@ public Plugin myinfo = {
     name = "L4D2 Director Intensity 2.0",
     author = "Tighty-Whitey",
     description = "Adaptive director intensity and disaster fatigue.",
-    version = "1.7",
+    version = "1.8",
     url = ""
 };
 
@@ -110,6 +110,18 @@ bool  g_bBossBlockCarryover = false;
 float g_fBossRemainingFlow = 0.0;
 bool  g_bFatigueBlockCarryover = false;
 float g_fFatigueRemainingFlow = 0.0;
+
+// Timer carryover tracking
+float g_fHordeTimerStart = 0.0;
+float g_fSpecialTimerStart = 0.0;
+float g_fBossTimerStart = 0.0;
+float g_fFatigueTimerStart = 0.0;
+
+// Saved remaining time for carryover
+float g_fHordeRemainingTime = 0.0;
+float g_fSpecialRemainingTime = 0.0;
+float g_fBossRemainingTime = 0.0;
+float g_fFatigueRemainingTime = 0.0;
 
 // Boomer vomit tracking
 float g_fBoomerVomitUntil[MAXPLAYERS+1];
@@ -210,7 +222,7 @@ public void OnPluginStart()
     gC_FatigueWitchDivider   = CreateConVar("director_intensity_fatigue_witch_damage_divider",      "2000.0","Witch damage divided by this to increase Fatigue (0 = use fallback)", FCVAR_NOTIFY, true, 0.0);
     gC_FatigueRebreather     = CreateConVar("director_intensity_disaster_fatigue_rebreather",       "900.0","Fatigue block duration", FCVAR_NOTIFY, true, 0.0);
     gC_FatigueDecayEnable    = CreateConVar("director_intensity_disaster_fatigue_decay_enable",     "1",    "Enable fatigue decay", FCVAR_NOTIFY, true, 0.0, true, 1.0);
-    gC_FatigueDecayInterval  = CreateConVar("director_intensity_disaster_fatigue_decay_interval",   "90.0", "Seconds to lose 0.1 fatigue", FCVAR_NOTIFY, true, 0.1);
+    gC_FatigueDecayInterval  = CreateConVar("director_intensity_disaster_fatigue_decay_interval",   "75.0", "Seconds to lose 0.1 fatigue", FCVAR_NOTIFY, true, 0.1);
     gC_FatigueDecayDelay     = CreateConVar("director_intensity_disaster_fatigue_decay_delay",      "60.0", "Seconds without damage before fatigue decay starts", FCVAR_NOTIFY, true, 0.0);
     gC_FatigueDecayLockout   = CreateConVar("director_intensity_disaster_fatigue_decay_lockout",    "30.0", "Seconds after a bump before decay resumes", FCVAR_NOTIFY, true, 0.0);
     gC_FatigueHUD            = CreateConVar("director_intensity_disaster_fatigue_hud",              "0",    "Show fatigue HUD (admin only)", FCVAR_NOTIFY, true, 0.0, true, 1.0);
@@ -377,9 +389,6 @@ public void OnMapStart()
         g_bBossBlockCarryover = false;
         g_bBossBlockActive = false;
     }
-    g_fFatigueLastDamageTime = GetEngineTime();
-
-    ApplyDisasterFatigueBump();
 
     if (g_bHordeBlockCarryover)
     {
@@ -577,9 +586,13 @@ void StartHordeBlock()
         g_fHordeFlowUnblockCurrent = gC_HordeFlowUnblock.FloatValue;
     }
     float rebr = gC_HordeRebreather.FloatValue;
+    if (g_bHordeBlockCarryover && g_fHordeRemainingTime > 0.0)
+        rebr = g_fHordeRemainingTime;
+    g_fHordeRemainingTime = 0.0;
     if (gC_HordeChat.BoolValue) { char msg[128]; Format(msg, sizeof(msg), "\x04[DI] Horde block %.1fs", rebr); PrintToRootAdmins(msg); }
     DebugLog("Horde block started: %.1f s, flow %.0f", rebr, g_fHordeBlockStartFlow);
     g_hHordeRebreather = CreateTimer(rebr, Timer_HordeRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+    g_fHordeTimerStart = GetEngineTime();
     EvaluateFinaleSkip();
 }
 public Action Timer_HordeRebreatherEnd(Handle timer)
@@ -587,7 +600,7 @@ public Action Timer_HordeRebreatherEnd(Handle timer)
     g_hHordeRebreather = null;
     if (g_bFatigueBlockActive) return Plugin_Stop;
     if (!g_bEventActive) { g_bHordeBlockActive = false; EvaluateFinaleSkip(); return Plugin_Stop; }
-    if (g_fHordeIntensity >= gC_HordeThreshold.FloatValue) { g_hHordeRebreather = CreateTimer(gC_HordeRebreather.FloatValue, Timer_HordeRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE); return Plugin_Stop; }
+    if (g_fHordeIntensity >= gC_HordeThreshold.FloatValue) { g_hHordeRebreather = CreateTimer(gC_HordeRebreather.FloatValue, Timer_HordeRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE); g_fHordeTimerStart = GetEngineTime(); return Plugin_Stop; }
     g_bHordeBlockActive = false; EvaluateHordeBlocking();
     EvaluateFinaleSkip();
     return Plugin_Stop;
@@ -614,6 +627,7 @@ void CheckHordeFlowUnblock()
             g_fHordeBlockStartFlow = curFlow;
             if (g_hHordeRebreather != null) { KillTimer(g_hHordeRebreather); g_hHordeRebreather = null; }
             g_hHordeRebreather = CreateTimer(gC_HordeRebreather.FloatValue, Timer_HordeRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+            g_fHordeTimerStart = GetEngineTime();
         }
     }
 }
@@ -662,9 +676,13 @@ void StartSpecialBlock()
         g_fSpecialFlowUnblockCurrent = gC_SpecialFlowUnblock.FloatValue;
     }
     float rebr = gC_SpecialRebreather.FloatValue;
+    if (g_bSpecialBlockCarryover && g_fSpecialRemainingTime > 0.0)
+        rebr = g_fSpecialRemainingTime;
+    g_fSpecialRemainingTime = 0.0;
     if (gC_SpecialChat.BoolValue) { char msg[128]; Format(msg, sizeof(msg), "\x04[DI] Special block %.1fs", rebr); PrintToRootAdmins(msg); }
     DebugLog("Special block started: %.1f s, flow %.0f", rebr, g_fSpecialBlockStartFlow);
     g_hSpecialRebreather = CreateTimer(rebr, Timer_SpecialRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+    g_fSpecialTimerStart = GetEngineTime();
     EvaluateFinaleSkip();
 }
 public Action Timer_SpecialRebreatherEnd(Handle timer)
@@ -672,7 +690,7 @@ public Action Timer_SpecialRebreatherEnd(Handle timer)
     g_hSpecialRebreather = null;
     if (g_bFatigueBlockActive) return Plugin_Stop; 
     if (!g_bEventActive) { g_bSpecialBlockActive = false; EvaluateFinaleSkip(); return Plugin_Stop; }
-    if (g_fSpecialIntensity >= gC_SpecialThreshold.FloatValue) { g_hSpecialRebreather = CreateTimer(gC_SpecialRebreather.FloatValue, Timer_SpecialRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE); return Plugin_Stop; }
+    if (g_fSpecialIntensity >= gC_SpecialThreshold.FloatValue) { g_hSpecialRebreather = CreateTimer(gC_SpecialRebreather.FloatValue, Timer_SpecialRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE); g_fSpecialTimerStart = GetEngineTime(); return Plugin_Stop; }
     g_bSpecialBlockActive = false; EvaluateSpecialBlocking();
     EvaluateFinaleSkip();
     return Plugin_Stop;
@@ -699,6 +717,7 @@ void CheckSpecialFlowUnblock()
             g_fSpecialBlockStartFlow = curFlow;
             if (g_hSpecialRebreather != null) { KillTimer(g_hSpecialRebreather); g_hSpecialRebreather = null; }
             g_hSpecialRebreather = CreateTimer(gC_SpecialRebreather.FloatValue, Timer_SpecialRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+            g_fSpecialTimerStart = GetEngineTime();
         }
     }
 }
@@ -747,9 +766,13 @@ void StartBossBlock()
         g_fBossFlowUnblockCurrent = gC_BossFlowUnblock.FloatValue;
     }
     float rebr = gC_BossRebreather.FloatValue;
+    if (g_bBossBlockCarryover && g_fBossRemainingTime > 0.0)
+        rebr = g_fBossRemainingTime;
+    g_fBossRemainingTime = 0.0;
     if (gC_BossChat.BoolValue) { char msg[128]; Format(msg, sizeof(msg), "\x04[DI] Boss block %.1fs", rebr); PrintToRootAdmins(msg); }
     DebugLog("Boss block started: %.1f s, flow %.0f", rebr, g_fBossBlockStartFlow);
     g_hBossRebreather = CreateTimer(rebr, Timer_BossRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+    g_fBossTimerStart = GetEngineTime();
 
     if (gC_DebugRebreather.BoolValue)
         LogToFileEx(g_sLogPath, "[BOSSDBG] BLOCK START | intensity=%.6f flowStart=%.0f unblockNeed=%.0f carryover=%d timerExists=%d",
@@ -778,6 +801,7 @@ public Action Timer_BossRebreatherEnd(Handle timer)
     {
         if (gC_DebugRebreather.BoolValue) LogToFileEx(g_sLogPath, "[BOSSDBG] TIMER RENEW (intensity >= threshold)");
         g_hBossRebreather = CreateTimer(gC_BossRebreather.FloatValue, Timer_BossRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+        g_fBossTimerStart = GetEngineTime();
         return Plugin_Stop;
     }
 
@@ -828,6 +852,7 @@ void CheckBossFlowUnblock()
             }
             if (gC_DebugRebreather.BoolValue) LogToFileEx(g_sLogPath, "[BOSSDBG] FLOWCHECK RESET START & NEW TIMER (intensity high)");
             g_hBossRebreather = CreateTimer(gC_BossRebreather.FloatValue, Timer_BossRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+            g_fBossTimerStart = GetEngineTime();
         }
     }
 }
@@ -890,9 +915,13 @@ void StartFatigueBlock()
         g_fFatigueFlowUnblockCurrent = gC_FatigueFlowUnblock.FloatValue;
     }
     float rebr = gC_FatigueRebreather.FloatValue;
+    if (g_bFatigueBlockCarryover && g_fFatigueRemainingTime > 0.0)
+        rebr = g_fFatigueRemainingTime;
+    g_fFatigueRemainingTime = 0.0;
     if (gC_FatigueChat.BoolValue) { char msg[128]; Format(msg, sizeof(msg), "\x04[DI] Fatigue block %.1fs", rebr); PrintToRootAdmins(msg); }
     DebugLog("Fatigue block started: %.1f s, flow %.0f", rebr, g_fFatigueBlockStartFlow);
     g_hFatigueRebreather = CreateTimer(rebr, Timer_FatigueRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+    g_fFatigueTimerStart = GetEngineTime();
     EvaluateFinaleSkip();
 }
 public Action Timer_FatigueRebreatherEnd(Handle timer)
@@ -901,6 +930,7 @@ public Action Timer_FatigueRebreatherEnd(Handle timer)
     if (g_fFatigue >= gC_FatigueThreshold.FloatValue)
     {
         g_hFatigueRebreather = CreateTimer(gC_FatigueRebreather.FloatValue, Timer_FatigueRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+        g_fFatigueTimerStart = GetEngineTime();
         return Plugin_Stop;
     }
 
@@ -923,7 +953,7 @@ void CheckFatigueFlowUnblock()
     {
         if (g_hFatigueRebreather != null) { KillTimer(g_hFatigueRebreather); g_hFatigueRebreather = null; }
         if (g_fFatigue < gC_FatigueThreshold.FloatValue) { g_bFatigueBlockActive = false; EvaluateFatigueBlocking(); EvaluateFinaleSkip(); }
-        else { g_fFatigueBlockStartFlow = curFlow; g_hFatigueRebreather = CreateTimer(gC_FatigueRebreather.FloatValue, Timer_FatigueRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE); }
+        else { g_fFatigueBlockStartFlow = curFlow; g_hFatigueRebreather = CreateTimer(gC_FatigueRebreather.FloatValue, Timer_FatigueRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE); g_fFatigueTimerStart = GetEngineTime(); }
     }
 }
 
@@ -1335,21 +1365,25 @@ public Action Timer_Check(Handle timer)
     {
         if (gC_DebugRebreather.BoolValue) LogToFileEx(g_sLogPath, "[BOSSDBG] Timer_Check: Horde timer was NULL – recreating");
         g_hHordeRebreather = CreateTimer(gC_HordeRebreather.FloatValue, Timer_HordeRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+        g_fHordeTimerStart = GetEngineTime();
     }
     if (g_bSpecialBlockActive && g_hSpecialRebreather == null)
     {
         if (gC_DebugRebreather.BoolValue) LogToFileEx(g_sLogPath, "[BOSSDBG] Timer_Check: Special timer was NULL – recreating");
         g_hSpecialRebreather = CreateTimer(gC_SpecialRebreather.FloatValue, Timer_SpecialRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+        g_fSpecialTimerStart = GetEngineTime();
     }
     if (g_bBossBlockActive && g_hBossRebreather == null)
     {
         if (gC_DebugRebreather.BoolValue) LogToFileEx(g_sLogPath, "[BOSSDBG] Timer_Check: Boss timer was NULL – recreating");
         g_hBossRebreather = CreateTimer(gC_BossRebreather.FloatValue, Timer_BossRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+        g_fBossTimerStart = GetEngineTime();
     }
     if (g_bFatigueBlockActive && g_hFatigueRebreather == null)
     {
         if (gC_DebugRebreather.BoolValue) LogToFileEx(g_sLogPath, "[BOSSDBG] Timer_Check: Fatigue timer was NULL – recreating");
         g_hFatigueRebreather = CreateTimer(gC_FatigueRebreather.FloatValue, Timer_FatigueRebreatherEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+        g_fFatigueTimerStart = GetEngineTime();
     }
 
     ApplyHordeDecay();
@@ -1455,33 +1489,46 @@ public void Event_ClearState(Event event, const char[] name, bool dontBroadcast)
     if (StrEqual(name, "map_transition"))
     {
         float curFlow = GetFarthestFlowDistance();
+        float now = GetEngineTime();
 
         if (g_bHordeBlockActive)
         {
             g_fHordeRemainingFlow = g_fHordeFlowUnblockCurrent - (curFlow - g_fHordeBlockStartFlow);
             if (g_fHordeRemainingFlow < 0.0) g_fHordeRemainingFlow = 0.0;
             g_bHordeBlockCarryover = true;
+            float elapsed = now - g_fHordeTimerStart;
+            float remaining = gC_HordeRebreather.FloatValue - elapsed;
+            g_fHordeRemainingTime = (remaining > 0.0) ? remaining : 0.0;
         }
         if (g_bSpecialBlockActive)
         {
             g_fSpecialRemainingFlow = g_fSpecialFlowUnblockCurrent - (curFlow - g_fSpecialBlockStartFlow);
             if (g_fSpecialRemainingFlow < 0.0) g_fSpecialRemainingFlow = 0.0;
             g_bSpecialBlockCarryover = true;
+            float elapsed = now - g_fSpecialTimerStart;
+            float remaining = gC_SpecialRebreather.FloatValue - elapsed;
+            g_fSpecialRemainingTime = (remaining > 0.0) ? remaining : 0.0;
         }
         if (g_bBossBlockActive)
         {
             g_fBossRemainingFlow = g_fBossFlowUnblockCurrent - (curFlow - g_fBossBlockStartFlow);
             if (g_fBossRemainingFlow < 0.0) g_fBossRemainingFlow = 0.0;
             g_bBossBlockCarryover = true;
+            float elapsed = now - g_fBossTimerStart;
+            float remaining = gC_BossRebreather.FloatValue - elapsed;
+            g_fBossRemainingTime = (remaining > 0.0) ? remaining : 0.0;
             if (gC_DebugRebreather.BoolValue)
-                LogToFileEx(g_sLogPath, "[BOSSDBG] Map transition – saving carryover: blockActive=%d curFlow=%.0f startFlow=%.0f unblockNeed=%.0f remainingFlow=%.0f",
-                    g_bBossBlockActive, curFlow, g_fBossBlockStartFlow, g_fBossFlowUnblockCurrent, g_fBossRemainingFlow);
+                LogToFileEx(g_sLogPath, "[BOSSDBG] Map transition – saving carryover: blockActive=%d curFlow=%.0f startFlow=%.0f unblockNeed=%.0f remainingFlow=%.0f remainingTime=%.1f",
+                    g_bBossBlockActive, curFlow, g_fBossBlockStartFlow, g_fBossFlowUnblockCurrent, g_fBossRemainingFlow, g_fBossRemainingTime);
         }
         if (g_bFatigueBlockActive)
         {
             g_fFatigueRemainingFlow = g_fFatigueFlowUnblockCurrent - (curFlow - g_fFatigueBlockStartFlow);
             if (g_fFatigueRemainingFlow < 0.0) g_fFatigueRemainingFlow = 0.0;
             g_bFatigueBlockCarryover = true;
+            float elapsed = now - g_fFatigueTimerStart;
+            float remaining = gC_FatigueRebreather.FloatValue - elapsed;
+            g_fFatigueRemainingTime = (remaining > 0.0) ? remaining : 0.0;
         }
     }
 
