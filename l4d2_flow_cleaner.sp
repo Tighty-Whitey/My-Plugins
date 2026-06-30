@@ -47,7 +47,7 @@ public void OnPluginStart()
     g_cvMinReduce = CreateConVar("l4d2_flow_cleaner_minreduce", "1200.0", "Min distance reduction to be 'approaching'", FCVAR_NOTIFY, true, 0.0, true, 9999.0);
     g_cvDebug = CreateConVar("l4d2_flow_cleaner_debug", "0", "Debug: 0=off, 1=log to file, 2=log+admin chat", FCVAR_NOTIFY, true, 0.0, true, 2.0);
     g_cvAdminFlag = CreateConVar("l4d2_flow_cleaner_admin_flag", "z", "Admin flag for chat messages", FCVAR_NOTIFY);
-    g_cvMode = CreateConVar("l4d2_flow_cleaner_mode", "1", "Mode: 1=leading survivor, 2=team center (average X,Y,Z), 3=nearest survivor", FCVAR_NOTIFY, true, 1.0, true, 3.0);
+    g_cvMode = CreateConVar("l4d2_flow_cleaner_mode", "1", "Mode: 1=leading survivor, 2=team center (average X,Y,Z), 3=all survivors", FCVAR_NOTIFY, true, 1.0, true, 3.0);
 
     AutoExecConfig(true, "l4d2_flow_cleaner");
 
