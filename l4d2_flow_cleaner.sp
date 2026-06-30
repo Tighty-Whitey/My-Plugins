@@ -50,7 +50,7 @@ public void OnPluginStart()
 
     AutoExecConfig(true, "l4d2_flow_cleaner");
 
-    LogToFile(g_sLogPath, "[Cleaner] Plugin loaded. Debug = %d", g_cvDebug.IntValue);
+    // Conditional chat startup – only when debug >= 2
     if (g_cvDebug.IntValue >= 2)
         PrintToChatAll("\x03[Cleaner]\x01 Plugin loaded. Debug level = %d", g_cvDebug.IntValue);
 
@@ -62,6 +62,27 @@ public void OnPluginStart()
     HookEvent("player_spawn", Event_PlayerSpawn, EventHookMode_Post);
     HookEvent("player_death", Event_PlayerDeath, EventHookMode_Pre);
     HookEvent("round_start", OnRoundStart, EventHookMode_PostNoCopy);
+}
+
+public void OnMapStart()
+{
+    // Clear stale data on new map
+    g_LastDistMap.Clear();
+    g_LastTimeMap.Clear();
+    g_SpawnTimeMap.Clear();
+
+    // Restart the timer
+    if (g_hTimer != null)
+    {
+        KillTimer(g_hTimer);
+        g_hTimer = null;
+    }
+
+    if (g_cvEnable.BoolValue)
+    {
+        float interval = g_cvInterval.FloatValue;
+        g_hTimer = CreateTimer(interval, Timer_Clean, _, TIMER_REPEAT);
+    }
 }
 
 public void OnEntityCreated(int entity, const char[] classname)
