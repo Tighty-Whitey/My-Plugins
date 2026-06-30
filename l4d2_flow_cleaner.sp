@@ -28,7 +28,7 @@ public Plugin myinfo =
 {
     name = "[L4D2] Flow Cleaner",
     author = "Tighty-Whitey",
-    description = "Removes stuck AI infected far behind the leading survivor (or team center)",
+    description = "Removes stuck AI infected far behind the leading survivor (or team center, or nearest survivor)",
     version = "1.1",
     url = ""
 };
@@ -47,7 +47,7 @@ public void OnPluginStart()
     g_cvMinReduce = CreateConVar("l4d2_flow_cleaner_minreduce", "1200.0", "Min distance reduction to be 'approaching'", FCVAR_NOTIFY, true, 0.0, true, 9999.0);
     g_cvDebug = CreateConVar("l4d2_flow_cleaner_debug", "0", "Debug: 0=off, 1=log to file, 2=log+admin chat", FCVAR_NOTIFY, true, 0.0, true, 2.0);
     g_cvAdminFlag = CreateConVar("l4d2_flow_cleaner_admin_flag", "z", "Admin flag for chat messages", FCVAR_NOTIFY);
-    g_cvMode = CreateConVar("l4d2_flow_cleaner_mode", "1", "Mode: 1=leading survivor, 2=team center (average X,Y,Z)", FCVAR_NOTIFY, true, 1.0, true, 2.0);
+    g_cvMode = CreateConVar("l4d2_flow_cleaner_mode", "1", "Mode: 1=leading survivor, 2=team center (average X,Y,Z), 3=nearest survivor", FCVAR_NOTIFY, true, 1.0, true, 3.0);
 
     AutoExecConfig(true, "l4d2_flow_cleaner");
 
@@ -99,7 +99,6 @@ public void OnEntityDestroyed(int entity)
     if (entity <= 0) return;
     char key[16];
     Format(key, sizeof(key), "%d", entity);
-    // Unconditional cleanup – no classname check, no IsValidEntity
     g_LastDistMap.Remove(key);
     g_LastTimeMap.Remove(key);
     g_SpawnTimeMap.Remove(key);
@@ -224,6 +223,11 @@ int GetReferencePosition(float refPos[3])
         refPos[2] = center[2] / float(count);
         return 0;
     }
+    else if (mode == 3)
+    {
+        // No single reference point – mode 3 uses per‑entity nearest survivor
+        return -1; // sentinel
+    }
 
     return -1;
 }
@@ -273,6 +277,28 @@ void GetEntityDisplayName(int entity, char[] buffer, int maxlen)
     }
 }
 
+// Returns nearest survivor distance, or -1.0 if no survivors
+float GetNearestSurvivorDistance(const float entityPos[3])
+{
+    float nearest = 999999.0;
+    bool found = false;
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        if (IsClientInGame(i) && GetClientTeam(i) == 2 && IsPlayerAlive(i))
+        {
+            float pos[3];
+            GetClientAbsOrigin(i, pos);
+            float dist = GetVectorDistance(pos, entityPos);
+            if (dist < nearest)
+            {
+                nearest = dist;
+                found = true;
+            }
+        }
+    }
+    return found ? nearest : -1.0;
+}
+
 void KillEntity(int entity, const char[] msg, int debug, ArrayList admins)
 {
     if (entity > MaxClients)
@@ -300,7 +326,7 @@ void KillEntity(int entity, const char[] msg, int debug, ArrayList admins)
     }
 }
 
-void ProcessEntity(int entity, float refPos[3], float distThreshold, float minAge, float minReduce, int debug, float curTime, float interval, ArrayList admins, int &killed)
+void ProcessEntity(int entity, int mode, float refPos[3], float distThreshold, float minAge, float minReduce, int debug, float curTime, float interval, ArrayList admins, int &killed)
 {
     if (!IsEntityTrackable(entity))
         return;
@@ -321,9 +347,23 @@ void ProcessEntity(int entity, float refPos[3], float distThreshold, float minAg
 
     float pos[3];
     if (!GetEntityPosition(entity, pos))
-        return; // entity invalid, skip
+        return;
 
-    float distToRef = GetVectorDistance(pos, refPos);
+    float distToRef;
+    if (mode == 1 || mode == 2)
+    {
+        distToRef = GetVectorDistance(pos, refPos);
+    }
+    else if (mode == 3)
+    {
+        distToRef = GetNearestSurvivorDistance(pos);
+        if (distToRef < 0.0)
+            return; // no survivors alive
+    }
+    else
+    {
+        return;
+    }
 
     if (distToRef < distThreshold)
     {
@@ -407,10 +447,16 @@ public Action Timer_Clean(Handle timer)
     if (!g_cvEnable.BoolValue)
         return Plugin_Continue;
 
-    float refPos[3];
-    int ref = GetReferencePosition(refPos);
-    if (ref == -1)
-        return Plugin_Continue;
+    int mode = g_cvMode.IntValue;
+    float refPos[3] = {0.0, 0.0, 0.0}; // only used for modes 1/2
+
+    if (mode == 1 || mode == 2)
+    {
+        int ref = GetReferencePosition(refPos);
+        if (ref == -1)
+            return Plugin_Continue;
+    }
+    // mode 3 does not need refPos
 
     float distThreshold = g_cvDist.FloatValue;
     float minAge = g_cvMinTime.FloatValue;
@@ -438,14 +484,14 @@ public Action Timer_Clean(Handle timer)
     while ((entity = FindEntityByClassname(entity, "infected")) != -1)
     {
         if (IsValidEntity(entity))
-            ProcessEntity(entity, refPos, distThreshold, minAge, minReduce, debug, curTime, interval, admins, killed);
+            ProcessEntity(entity, mode, refPos, distThreshold, minAge, minReduce, debug, curTime, interval, admins, killed);
     }
 
     entity = -1;
     while ((entity = FindEntityByClassname(entity, "witch")) != -1)
     {
         if (IsValidEntity(entity))
-            ProcessEntity(entity, refPos, distThreshold, minAge, minReduce, debug, curTime, interval, admins, killed);
+            ProcessEntity(entity, mode, refPos, distThreshold, minAge, minReduce, debug, curTime, interval, admins, killed);
     }
 
     for (int i = 1; i <= MaxClients; i++)
@@ -453,8 +499,8 @@ public Action Timer_Clean(Handle timer)
         if (!IsClientInGame(i)) continue;
         if (GetClientTeam(i) != 3) continue;
         if (!IsFakeClient(i)) continue;
-        if (!IsPlayerAlive(i)) continue; // extra safety – skip dead bots
-        ProcessEntity(i, refPos, distThreshold, minAge, minReduce, debug, curTime, interval, admins, killed);
+        if (!IsPlayerAlive(i)) continue;
+        ProcessEntity(i, mode, refPos, distThreshold, minAge, minReduce, debug, curTime, interval, admins, killed);
     }
 
     if (killed > 0)
