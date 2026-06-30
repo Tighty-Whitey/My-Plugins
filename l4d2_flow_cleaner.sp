@@ -42,7 +42,7 @@ public void OnPluginStart()
 
     g_cvEnable = CreateConVar("l4d2_flow_cleaner_enable", "1", "Enable plugin", FCVAR_NOTIFY, true, 0.0, true, 1.0);
     g_cvInterval = CreateConVar("l4d2_flow_cleaner_interval", "15.0", "Check interval in seconds", FCVAR_NOTIFY, true, 1.0, true, 60.0);
-    g_cvDist = CreateConVar("l4d2_flow_cleaner_dist", "7000.0", "Distance threshold from leader (units)", FCVAR_NOTIFY, true, 100.0, true, 20000.0);
+    g_cvDist = CreateConVar("l4d2_flow_cleaner_dist", "8000.0", "Distance threshold from leader (units)", FCVAR_NOTIFY, true, 100.0, true, 20000.0);
     g_cvMinTime = CreateConVar("l4d2_flow_cleaner_mintime", "45.0", "Minimum age after spawn before removal (seconds)", FCVAR_NOTIFY, true, 0.0, true, 120.0);
     g_cvMinReduce = CreateConVar("l4d2_flow_cleaner_minreduce", "1200.0", "Min distance reduction to be 'approaching'", FCVAR_NOTIFY, true, 0.0, true, 9999.0);
     g_cvDebug = CreateConVar("l4d2_flow_cleaner_debug", "0", "Debug: 0=off, 1=log to file, 2=log+admin chat", FCVAR_NOTIFY, true, 0.0, true, 2.0);
